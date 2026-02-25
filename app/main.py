@@ -13,3 +13,4 @@ async def health_check():
     Sanity check endpoint to verify the API is running.
     """
     return {"status": "ok", "message": "ClarityScan API is up and running!"}
+   
