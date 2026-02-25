@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from app.db.database import Base
-from app.db.models import Receipt
+from app.db.models import Receipt  # noqa: F401
 
 from alembic import context
 import asyncio
