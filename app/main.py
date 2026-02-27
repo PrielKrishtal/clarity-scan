@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.api import auth, receipts
+from app.api import receipts
 # Initialize the FastAPI application
 app = FastAPI(
     title="ClarityScan API",
