@@ -1,2 +1,44 @@
-### Check API Health
+### 1. Health Check (Verify API is running)
 GET http://127.0.0.1:8000/health
+
+### 2. Create the first receipt (POST)
+POST http://127.0.0.1:8000/receipts/
+Content-Type: application/json
+
+{
+    "merchant_name": "Rami Levy",
+    "total_amount": 150.50,
+    "tax_amount": 25.50,
+    "receipt_date": "2026-02-27"
+}
+
+### 3. Create a second receipt (POST)
+POST http://127.0.0.1:8000/receipts/
+Content-Type: application/json
+
+{
+    "merchant_name": "KSP",
+    "total_amount": 4200.00,
+    "tax_amount": 714.00,
+    "receipt_date": "2026-02-26"
+}
+
+### 4. Get all receipts (GET)
+GET http://127.0.0.1:8000/receipts/
+
+### 5. Get a specific receipt by ID (GET - assuming ID is 1)
+GET http://127.0.0.1:8000/receipts/1
+
+### 6. Update an existing receipt (PUT - updating receipt ID 1)
+PUT http://127.0.0.1:8000/receipts/1
+Content-Type: application/json
+
+{
+    "merchant_name": "Rami Levy Hashikma",
+    "total_amount": 160.00,
+    "tax_amount": 27.00,
+    "receipt_date": "2026-02-27"
+}
+
+### 7. Delete a receipt (DELETE - removing receipt ID 2)
+DELETE http://127.0.0.1:8000/receipts/2

@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-
+from app.api import auth, receipts
 # Initialize the FastAPI application
 app = FastAPI(
     title="ClarityScan API",
@@ -7,10 +7,13 @@ app = FastAPI(
     version="1.0.0"
 )
 
+app.include_router(receipts.router)
+
+
 @app.get("/health")
 async def health_check():
     """
     Sanity check endpoint to verify the API is running.
     """
     return {"status": "ok", "message": "ClarityScan API is up and running!"}
-   
+
