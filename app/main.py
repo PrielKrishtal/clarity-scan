@@ -1,5 +1,6 @@
 from fastapi import FastAPI
-from app.api import receipts
+from app.api import receipts,auth
+
 # Initialize the FastAPI application
 app = FastAPI(
     title="ClarityScan API",
@@ -8,7 +9,7 @@ app = FastAPI(
 )
 
 app.include_router(receipts.router)
-
+app.include_router(auth.router)
 
 @app.get("/health")
 async def health_check():

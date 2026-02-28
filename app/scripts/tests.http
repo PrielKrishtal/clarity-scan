@@ -42,3 +42,14 @@ Content-Type: application/json
 
 ### 7. Delete a receipt (DELETE - removing receipt ID 2)
 DELETE http://127.0.0.1:8000/receipts/2
+
+
+
+### Register a new user (POST)
+POST http://127.0.0.1:8000/auth/register
+Content-Type: application/json
+
+{
+    "email_address": "priel.krishtal@example.com",
+    "password": "StrongPassword123!"
+}
