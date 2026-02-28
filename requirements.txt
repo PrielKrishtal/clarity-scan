@@ -23,4 +23,8 @@ pytest==9.0.2
 # --- Authentication ---
 passlib[argon2]==1.7.4  # Using argon2 (more modern than bcrypt)
 argon2-cffi>=21.3.0
+pyjwt[crypto]==2.11.0  # JWT tokens with cryptographic signing
 pydantic[email]
+jwt
+pydantic-settings
+argon2-cffi

@@ -53,3 +53,10 @@ Content-Type: application/json
     "email_address": "priel.krishtal@example.com",
     "password": "StrongPassword123!"
 }
+
+
+### Login for Access Token (POST)
+POST http://127.0.0.1:8000/auth/login
+Content-Type: application/x-www-form-urlencoded
+
+username=priel.krishtal@example.com&password=StrongPassword123!
