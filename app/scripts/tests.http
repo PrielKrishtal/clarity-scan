@@ -1,9 +1,36 @@
-### 1. Health Check (Verify API is running)
-GET http://127.0.0.1:8000/health
+### Variables
+@host = http://127.0.0.1:8000
+@email = test.user@example.com
+@password = StrongPassword123!
 
-### 2. Create the first receipt (POST)
-POST http://127.0.0.1:8000/receipts/
+### 1. Register a new user
+POST {{host}}/auth/register
 Content-Type: application/json
+
+{
+    "email_address": "{{email}}",
+    "password": "{{password}}"
+}
+
+### 2. Login to obtain Access Token
+# @name login
+POST {{host}}/auth/login
+Content-Type: application/x-www-form-urlencoded
+
+username={{email}}&password={{password}}
+
+### 3. Capture Token from Login Response
+@token = {{login.response.body.access_token}}
+
+### 4. Verify Current User Profile (Auth Check)
+GET {{host}}/auth/me
+Authorization: Bearer {{token}}
+
+### 5. Create First Receipt (Protected)
+# @name createReceipt1
+POST {{host}}/receipts/
+Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
     "merchant_name": "Rami Levy",
@@ -12,9 +39,10 @@ Content-Type: application/json
     "receipt_date": "2026-02-27"
 }
 
-### 3. Create a second receipt (POST)
-POST http://127.0.0.1:8000/receipts/
+### 6. Create Second Receipt (Protected)
+POST {{host}}/receipts/
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
     "merchant_name": "KSP",
@@ -23,15 +51,19 @@ Content-Type: application/json
     "receipt_date": "2026-02-26"
 }
 
-### 4. Get all receipts (GET)
-GET http://127.0.0.1:8000/receipts/
+### 7. Get All My Receipts (Filtered by User ID)
+GET {{host}}/receipts/
+Authorization: Bearer {{token}}
 
-### 5. Get a specific receipt by ID (GET - assuming ID is 1)
-GET http://127.0.0.1:8000/receipts/1
+### 8. Get Specific Receipt
+@receiptId = {{createReceipt1.response.body.id}}
+GET {{host}}/receipts/{{receiptId}}
+Authorization: Bearer {{token}}
 
-### 6. Update an existing receipt (PUT - updating receipt ID 1)
-PUT http://127.0.0.1:8000/receipts/1
+### 9. Update Receipt
+PUT {{host}}/receipts/{{receiptId}}
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
     "merchant_name": "Rami Levy Hashikma",
@@ -40,23 +72,9 @@ Content-Type: application/json
     "receipt_date": "2026-02-27"
 }
 
-### 7. Delete a receipt (DELETE - removing receipt ID 2)
-DELETE http://127.0.0.1:8000/receipts/2
+### 10. Delete Receipt
+DELETE {{host}}/receipts/{{receiptId}}
+Authorization: Bearer {{token}}
 
-
-
-### Register a new user (POST)
-POST http://127.0.0.1:8000/auth/register
-Content-Type: application/json
-
-{
-    "email_address": "priel.krishtal@example.com",
-    "password": "StrongPassword123!"
-}
-
-
-### Login for Access Token (POST)
-POST http://127.0.0.1:8000/auth/login
-Content-Type: application/x-www-form-urlencoded
-
-username=priel.krishtal@example.com&password=StrongPassword123!
+### 11. Security Test: Unauthorized Access (Should return 401)
+GET {{host}}/receipts/
