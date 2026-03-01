@@ -1,13 +1,12 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from app.db.database import get_db
-from app.db.models import Receipt, User
+from app.db.models import User
 from app.schemas import receipt as schemas
 from app.api.auth import get_current_user
-
+from app.crud import receipt as crud_receipt
 
 router = APIRouter(
     prefix="/receipts",
@@ -16,103 +15,39 @@ router = APIRouter(
 
 # 1. CREATE
 @router.post("/", response_model=schemas.ReceiptResponse, status_code=status.HTTP_201_CREATED)
-async def create_receipt(
-    receipt: schemas.ReceiptCreate, 
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)):
-   
-   
-    new_receipt = Receipt(**receipt.model_dump(), user_id=current_user.id)
-    db.add(new_receipt)
-    await db.commit()
-    await db.refresh(new_receipt)
-    return new_receipt
+async def create_receipt(receipt: schemas.ReceiptCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await crud_receipt.create_user_receipt(db=db, receipt=receipt, user_id=current_user.id)
+
 
 # 2. READ ALL
 @router.get("/", response_model=List[schemas.ReceiptResponse])
-async def get_receipts(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)):
+async def get_receipts(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await crud_receipt.get_user_receipts(db=db, user_id=current_user.id)
 
-    result = await db.execute(
-        select(Receipt).where(Receipt.user_id == current_user.id)  # ← Key change!
-    )
-    return result.scalars().all()
- 
 
 # 3. READ ONE
 @router.get("/{receipt_id}", response_model=schemas.ReceiptResponse)
-async def get_receipt(
-    receipt_id: int, 
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user) 
-):
-
-    result = await db.execute(
-        select(Receipt).where(
-            Receipt.id == receipt_id, 
-            Receipt.user_id == current_user.id  # ← Ownership check!
-        )
-    )
-    receipt = result.scalar_one_or_none()
-    if receipt is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Receipt not found")
+async def get_receipt(receipt_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    receipt = await crud_receipt.get_receipt_by_id(db=db, receipt_id=receipt_id, user_id=current_user.id)
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
     return receipt
 
-       
-# 4. UPDATE
+
+# 4. UPDATE(put)
 @router.put("/{receipt_id}", response_model=schemas.ReceiptResponse)
-async def update_receipt(
-    receipt_id: int, 
-    receipt_update: schemas.ReceiptCreate, 
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user) 
-):
-    # Check ownership
-    stmt = await db.execute(
-        select(Receipt).where(
-            Receipt.id == receipt_id, 
-            Receipt.user_id == current_user.id  # ← Ownership check!
-        )
-    )
-    receipt_to_alter = stmt.scalar_one_or_none()
-    
-    if receipt_to_alter is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Receipt not found")
-    
-    receipt_to_alter.merchant_name = receipt_update.merchant_name
-    receipt_to_alter.total_amount = receipt_update.total_amount
-    receipt_to_alter.tax_amount = receipt_update.tax_amount
-    receipt_to_alter.receipt_date = receipt_update.receipt_date
+async def update_receipt(receipt_id: int, receipt_update: schemas.ReceiptCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+   
+    db_receipt = await crud_receipt.get_receipt_by_id(db=db, receipt_id=receipt_id, user_id=current_user.id)
+    if not db_receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    return await crud_receipt.update_user_receipt(db=db, db_receipt=db_receipt, update_data=receipt_update)
 
-    await db.commit()
-
-    await db.refresh(receipt_to_alter)
-
-    return receipt_to_alter
 
 # 5. DELETE
 @router.delete("/{receipt_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_receipt(
-    receipt_id: int, 
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user) 
-):
-    #Check ownership
-    stmt = await db.execute(
-        select(Receipt).where(
-            Receipt.id == receipt_id, 
-            Receipt.user_id == current_user.id  # ← Ownership check!
-        )
-    )
-    receipt_to_delete = stmt.scalar_one_or_none()
-    
-    if receipt_to_delete is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Receipt not found")
-    
-    await db.delete(receipt_to_delete)
-    await db.commit()
-
-    return
-
-
+async def delete_receipt(receipt_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    db_receipt = await crud_receipt.get_receipt_by_id(db=db, receipt_id=receipt_id, user_id=current_user.id)
+    if not db_receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    await crud_receipt.delete_user_receipt(db=db, db_receipt=db_receipt)
