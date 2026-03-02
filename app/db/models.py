@@ -11,9 +11,10 @@ import uuid
 
 
 class ReceiptStatus(enum.Enum):
-    UPLOADED = "UPLOADED"    
-    PROCESSING = "PROCESSING" 
-    COMPLETED = "COMPLETED"   
+    UPLOADED = "UPLOADED"       
+    PROCESSING = "PROCESSING"   
+    REVIEW_NEEDED = "REVIEW_NEEDED"
+    APPROVED = "APPROVED"      
     FAILED = "FAILED"
 
 class Receipt(Base):
