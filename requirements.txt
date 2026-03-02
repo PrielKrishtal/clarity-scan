@@ -12,6 +12,7 @@ alembic==1.14.0
 
 # --- Image Processing (Receipts) ---
 opencv-python-headless==4.10.0.84
+easyocr==1.7.2
 pillow==10.4.0
 numpy==2.1.1
 

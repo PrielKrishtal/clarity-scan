@@ -125,3 +125,7 @@ dmypy.json
 
 # Cython
 cython_debug/
+
+
+# Python cache (all subdirectories)
+**/__pycache__/
