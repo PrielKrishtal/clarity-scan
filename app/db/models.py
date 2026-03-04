@@ -20,7 +20,7 @@ class ReceiptStatus(enum.Enum):
 class Receipt(Base):
     __tablename__ = "receipts" 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
-    image_path: Mapped[str] = mapped_column(String, nullable=False)
+    image_path: Mapped[str] = mapped_column(String, nullable=True)
     merchant_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     tax_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
     total_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
