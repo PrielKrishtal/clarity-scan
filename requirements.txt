@@ -12,7 +12,7 @@ alembic==1.14.0
 
 # --- File Handling ---
 aiofiles
-python-magic-bin  # Windows-compatible libmagic bindings (use python-magic on Linux/macOS)
+python-magic
 
 # --- Image Processing (Receipts) ---
 opencv-python-headless==4.10.0.84
