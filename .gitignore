@@ -84,10 +84,14 @@ desktop.ini
 *.sqlite3
 db.sqlite3
 
-# ClarityScan specific
-uploads/
-receipts/
-media/
+
+app/uploads/*
+!app/uploads/.gitkeep
+
+
+!tests/
+!tests/assets/
+!tests/assets/**
 
 # Jupyter Notebook
 .ipynb_checkpoints

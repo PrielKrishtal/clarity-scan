@@ -78,3 +78,56 @@ Authorization: Bearer {{token}}
 
 ### 11. Security Test: Unauthorized Access (Should return 401)
 GET {{host}}/receipts/
+
+
+### 12. Upload Receipt Image - Realistic Snapshot
+# @name uploadReceipt1
+POST {{host}}/receipts/upload
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="file"; filename="receipt_realistic_snapshot.jpg"
+Content-Type: image/jpeg
+
+< ./tests/assets/test_receipts/receipt_realistic_snapshot.jpg
+--boundary--
+
+### 13. Upload Receipt Image - Standard Receipt
+POST {{host}}/receipts/upload
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="file"; filename="receipt_standard.jpg"
+Content-Type: image/jpeg
+
+< ./tests/assets/test_receipts/receipt_standard.jpg
+--boundary--
+
+### 14. Upload Receipt Image - OCR Edge Cases (thousands, special chars)
+POST {{host}}/receipts/upload
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="file"; filename="receipt_ocr_edge_cases.jpg"
+Content-Type: image/jpeg
+
+< ./tests/assets/test_receipts/receipt_ocr_edge_cases.jpg
+--boundary--
+
+### 15. Approve / Correct OCR Result (User Review Step)
+# Simulates the user reviewing the OCR output and correcting/approving it.
+# This is the REVIEW_NEEDED -> APPROVED FSM transition.
+@uploadedReceiptId = {{uploadReceipt1.response.body.id}}
+PUT {{host}}/receipts/{{uploadedReceiptId}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+    "merchant_name": "Walmart",
+    "total_amount": 23.19,
+    "tax_amount": 1.45,
+    "receipt_date": "2017-11-13"
+}

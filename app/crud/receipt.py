@@ -29,8 +29,14 @@ async def create_receipt_from_upload(db: AsyncSession, file_path: str, user_id: 
     return new_receipt
 
 # 2. READ ALL
-async def get_user_receipts(db: AsyncSession, user_id: int):
-    result = await db.execute(select(Receipt).where(Receipt.user_id == user_id))
+async def get_user_receipts(db: AsyncSession, user_id: int, skip: int = 0, limit: int = 20):
+    result = await db.execute(
+        select(Receipt)
+        .where(Receipt.user_id == user_id)
+        .order_by(Receipt.uploaded_at.desc()) 
+        .offset(skip)
+        .limit(limit)
+    )
     return result.scalars().all()
 
 # 3. READ ONE (Internal helper for Update/Delete/Get)
@@ -45,7 +51,6 @@ async def update_user_receipt(db: AsyncSession, db_receipt: Receipt, update_data
     update_dict = update_data.model_dump(exclude_unset=True)
     for key, value in update_dict.items():
         setattr(db_receipt, key, value)
-    db_receipt.status = ReceiptStatus.APPROVED
     await db.commit()
     await db.refresh(db_receipt)
     return db_receipt

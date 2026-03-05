@@ -1,9 +1,20 @@
+import logging
 import re
 
 import cv2
 import easyocr
 import numpy as np
+from fastapi.concurrency import run_in_threadpool
 
+from app.crud import receipt as crud_receipt
+from app.db.database import AsyncSessionLocal
+from app.db.models import ReceiptStatus
+from app.schemas.receipt import ReceiptUpdate
+from datetime import datetime, date, timezone
+
+# Force DEBUG on this specific logger regardless of uvicorn's root config
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 class ReceiptScanner:
     def __init__(self):
@@ -111,19 +122,35 @@ class ReceiptScanner:
         return "Unknown Company"
 
 
-    def _extract_date(self,text_list: list[str]) -> str | None:
+    def _extract_date(self,text_list: list[str]) -> date | None:
         date_pattern = r'\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b'
+        
+        formats_to_try = [
+            "%m/%d/%y",   # 11/13/17
+            "%m/%d/%Y",   # 11/13/2017
+            "%d/%m/%Y",   # 13/11/2017
+            "%d-%m-%Y",   # 13-11-2017
+            "%Y-%m-%d",   # 2017-11-13
+            "%Y.%m.%d",   # 2017.11.13
+        ]
         
         for line in text_list:
             matches = re.findall(date_pattern, line)
             if matches:
-                return matches[0] 
-                
+                raw = matches[0]
+                for fmt in formats_to_try:
+                    try:
+                        return datetime.strptime(raw, fmt).date()
+                    except ValueError:
+                        continue
         return None
     
 
     def scan(self, image_path: str) -> dict:        
         img = cv2.imread(image_path)
+        if img is None:
+            raise ValueError(f"Failed to load image. File may be corrupted or missing at: {image_path}")
+        
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
         blur = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -138,6 +165,14 @@ class ReceiptScanner:
         perimeter = cv2.arcLength(biggest_contour, True)
         epsilon = 0.02 * perimeter  # 2% tolerance
         approx_corners = cv2.approxPolyDP(biggest_contour, epsilon, True)
+
+        # Fallback: If the contour doesn't yield exactly 4 corners (e.g., wrinkled receipt, fingers in frame),
+        # force a minimum area bounding rectangle to mathematically guarantee exactly 4 corners.
+        if len(approx_corners) != 4:
+            rect = cv2.minAreaRect(biggest_contour)
+            approx_corners = cv2.boxPoints(rect)
+
+        # At this point, approx_corners is guaranteed to represent exactly 4 points.    
         ordered_corners = self._order_points(approx_corners)
         
         width_top = np.linalg.norm(ordered_corners[0] - ordered_corners[1])     
@@ -170,6 +205,44 @@ class ReceiptScanner:
         else:
             calculated_tax = None
 
-        return {"company": company, "date":receipt_date, "subtotal": subtotal, "tax":calculated_tax, "total":final_total}
+        return {
+                "merchant_name": company,
+                "total_amount": final_total,
+                "tax_amount": calculated_tax,
+                "receipt_date": receipt_date
+            }
         
             
+
+
+async def process_receipt_task(receipt_id: str, user_id: int):
+    """
+    Background task to process an uploaded receipt image.
+    Creates an independent DB session, runs the OCR, and updates the DB.
+    """
+    logger.debug(f"process_receipt_task STARTED — receipt_id={receipt_id} user_id={user_id}")
+    async with AsyncSessionLocal() as db:
+        try:
+            receipt = await crud_receipt.get_receipt_by_id(db, receipt_id, user_id)
+            if not receipt:
+                logger.error(f"Receipt {receipt_id} not found in DB.")
+                return
+            receipt.status = ReceiptStatus.PROCESSING
+            await db.commit()
+
+            scan_results = await run_in_threadpool(receipt_scanner.scan, receipt.image_path)
+            
+            update_data = ReceiptUpdate(**scan_results)
+            receipt.status = ReceiptStatus.REVIEW_NEEDED
+            receipt.processed_at = datetime.now(timezone.utc)
+            await crud_receipt.update_user_receipt(db=db, db_receipt=receipt, update_data=update_data)
+
+        except Exception as e:
+            logger.exception(f"Failed to process receipt {receipt_id}: {str(e)}")
+            if 'receipt' in locals() and receipt:
+                receipt.status = ReceiptStatus.FAILED
+                await db.commit()
+
+
+
+receipt_scanner = ReceiptScanner()
