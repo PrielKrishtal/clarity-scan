@@ -15,8 +15,11 @@ VALID_RECEIPT = {
 #  1. CRUD — Manual Create (POST /receipts/)
 # =====================================================================
 
+
 async def test_create_manual_receipt_returns_201(client, auth_headers_a):
-    response = await client.post("/receipts/", json=VALID_RECEIPT, headers=auth_headers_a)
+    response = await client.post(
+        "/receipts/", json=VALID_RECEIPT, headers=auth_headers_a
+    )
 
     assert response.status_code == 201
     data = response.json()
@@ -27,6 +30,7 @@ async def test_create_manual_receipt_returns_201(client, auth_headers_a):
 # =====================================================================
 #  2. CRUD — Read All (GET /receipts/)
 # =====================================================================
+
 
 async def test_get_receipts_returns_list(client, auth_headers_a):
     # seed two receipts
@@ -43,8 +47,11 @@ async def test_get_receipts_returns_list(client, auth_headers_a):
 #  3. CRUD — Read One (GET /receipts/{id})
 # =====================================================================
 
+
 async def test_get_single_receipt_returns_200(client, auth_headers_a):
-    create_resp = await client.post("/receipts/", json=VALID_RECEIPT, headers=auth_headers_a)
+    create_resp = await client.post(
+        "/receipts/", json=VALID_RECEIPT, headers=auth_headers_a
+    )
     receipt_id = create_resp.json()["id"]
 
     response = await client.get(f"/receipts/{receipt_id}", headers=auth_headers_a)
@@ -57,8 +64,11 @@ async def test_get_single_receipt_returns_200(client, auth_headers_a):
 #  4. CRUD — Delete (DELETE /receipts/{id})
 # =====================================================================
 
+
 async def test_delete_receipt_returns_204(client, auth_headers_a):
-    create_resp = await client.post("/receipts/", json=VALID_RECEIPT, headers=auth_headers_a)
+    create_resp = await client.post(
+        "/receipts/", json=VALID_RECEIPT, headers=auth_headers_a
+    )
     receipt_id = create_resp.json()["id"]
 
     response = await client.delete(f"/receipts/{receipt_id}", headers=auth_headers_a)
@@ -74,6 +84,7 @@ async def test_delete_receipt_returns_204(client, auth_headers_a):
 #  5. Security — No Auth Token → 401
 # =====================================================================
 
+
 async def test_no_auth_returns_401(client):
     response = await client.get("/receipts/")
 
@@ -84,9 +95,14 @@ async def test_no_auth_returns_401(client):
 #  6. Security — User A cannot see User B's receipts
 # =====================================================================
 
-async def test_user_a_cannot_see_user_b_receipts(client, auth_headers_a, auth_headers_b):
+
+async def test_user_a_cannot_see_user_b_receipts(
+    client, auth_headers_a, auth_headers_b
+):
     # User A creates a receipt
-    create_resp = await client.post("/receipts/", json=VALID_RECEIPT, headers=auth_headers_a)
+    create_resp = await client.post(
+        "/receipts/", json=VALID_RECEIPT, headers=auth_headers_a
+    )
     receipt_id = create_resp.json()["id"]
 
     # User B tries to access it
@@ -98,6 +114,7 @@ async def test_user_a_cannot_see_user_b_receipts(client, auth_headers_a, auth_he
 # =====================================================================
 #  7. Validation — Upload valid JPEG → 202
 # =====================================================================
+
 
 async def test_upload_jpeg_returns_202(client, auth_headers_a):
     image_path = os.path.join(ASSETS_DIR, "receipt_realistic_snapshot.jpg")
@@ -116,6 +133,7 @@ async def test_upload_jpeg_returns_202(client, auth_headers_a):
 #  8. Validation — Upload non-image file → 400
 # =====================================================================
 
+
 async def test_upload_non_image_returns_400(client, auth_headers_a):
     fake_txt = b"this is not an image"
     response = await client.post(
@@ -132,6 +150,7 @@ async def test_upload_non_image_returns_400(client, auth_headers_a):
 #  9. FSM — Valid transition: REVIEW_NEEDED → APPROVED (200)
 # =====================================================================
 
+
 async def test_approve_review_needed_receipt_returns_200(client, auth_headers_a):
     # Create via upload to get UPLOADED status, then manually set to REVIEW_NEEDED
     # Easiest: use the DB directly via a helper. Instead, we create manually
@@ -139,12 +158,15 @@ async def test_approve_review_needed_receipt_returns_200(client, auth_headers_a)
     from tests.conftest import TestSessionLocal
     from app.db.models import Receipt, ReceiptStatus
 
-    create_resp = await client.post("/receipts/", json=VALID_RECEIPT, headers=auth_headers_a)
+    create_resp = await client.post(
+        "/receipts/", json=VALID_RECEIPT, headers=auth_headers_a
+    )
     receipt_id = create_resp.json()["id"]
 
     # Force the receipt into REVIEW_NEEDED state via DB
     async with TestSessionLocal() as db:
         from sqlalchemy import update
+
         await db.execute(
             update(Receipt)
             .where(Receipt.id == receipt_id)
@@ -168,16 +190,20 @@ async def test_approve_review_needed_receipt_returns_200(client, auth_headers_a)
 # 10. FSM — Blocked transition: UPLOADED → APPROVED (409)
 # =====================================================================
 
+
 async def test_approve_uploaded_receipt_returns_409(client, auth_headers_a):
     from tests.conftest import TestSessionLocal
     from app.db.models import Receipt, ReceiptStatus
 
-    create_resp = await client.post("/receipts/", json=VALID_RECEIPT, headers=auth_headers_a)
+    create_resp = await client.post(
+        "/receipts/", json=VALID_RECEIPT, headers=auth_headers_a
+    )
     receipt_id = create_resp.json()["id"]
 
     # Force the receipt into UPLOADED state (simulating an upload path)
     async with TestSessionLocal() as db:
         from sqlalchemy import update
+
         await db.execute(
             update(Receipt)
             .where(Receipt.id == receipt_id)
@@ -199,6 +225,7 @@ async def test_approve_uploaded_receipt_returns_409(client, auth_headers_a):
 # 11. Validation — GET missing receipt → 404
 # =====================================================================
 
+
 async def test_get_nonexistent_receipt_returns_404(client, auth_headers_a):
     response = await client.get("/receipts/nonexistent-id-123", headers=auth_headers_a)
 
@@ -208,6 +235,7 @@ async def test_get_nonexistent_receipt_returns_404(client, auth_headers_a):
 # =====================================================================
 # 12. Security — Login rate limiting → 429 after 5 attempts
 # =====================================================================
+
 
 async def test_login_rate_limit_returns_429(client, user_a):
     login_data = {"username": "usera@test.com", "password": "WrongPassword"}

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, Field
-from decimal import Decimal      
+from decimal import Decimal
 from datetime import date, datetime
 from app.db.models import ReceiptStatus
 
@@ -23,7 +23,7 @@ class ReceiptUpdate(BaseModel):
 
 
 class ReceiptResponse(BaseModel):
-    id: str 
+    id: str
     status: ReceiptStatus
     merchant_name: str | None = None
     total_amount: Decimal | None = None

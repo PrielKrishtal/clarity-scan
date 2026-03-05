@@ -37,7 +37,3 @@ argon2-cffi>=21.3.0
 httpx
 aiosqlite
 pytest-asyncio==1.3.0
-pydantic[email]
-jwt
-pydantic-settings
-argon2-cffi

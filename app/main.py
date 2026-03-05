@@ -9,7 +9,7 @@ from app.core.limiter import limiter
 app = FastAPI(
     title="ClarityScan API",
     description="Backend for the ClarityScan Expense Management SaaS",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 app.state.limiter = limiter
@@ -18,10 +18,10 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.include_router(receipts.router)
 app.include_router(auth.router)
 
+
 @app.get("/health")
 async def health_check():
     """
     Sanity check endpoint to verify the API is running.
     """
     return {"status": "ok", "message": "ClarityScan API is up and running!"}
-
