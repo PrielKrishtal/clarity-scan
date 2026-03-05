@@ -8,7 +8,7 @@ db_url = os.getenv("DATABASE_URL")
 if not db_url:
     raise ValueError("DB_URL hasnt loaded properly")
 
-engine = create_async_engine(db_url, echo=True)
+engine = create_async_engine(db_url, echo=False)
 
 AsyncSessionLocal = async_sessionmaker(bind = engine, expire_on_commit=False)
 

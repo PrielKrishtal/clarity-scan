@@ -25,6 +25,7 @@ router = APIRouter(
 )
 
 SAFE_EXTENSIONS = {"image/jpeg": "jpg", "image/png": "png"}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 
 # 1. CREATE - Path A: Manual Entry (JSON)
@@ -60,6 +61,8 @@ async def upload_receipt_image(
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
 
     async with aiofiles.open(full_path, mode='wb') as f:
         await f.write(content)

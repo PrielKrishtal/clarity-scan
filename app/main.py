@@ -1,12 +1,19 @@
 from fastapi import FastAPI
-from app.api import receipts,auth
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
-# Initialize the FastAPI application
+from app.api import receipts, auth
+from app.core.limiter import limiter
+
+
 app = FastAPI(
     title="ClarityScan API",
     description="Backend for the ClarityScan Expense Management SaaS",
     version="1.0.0"
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.include_router(receipts.router)
 app.include_router(auth.router)
