@@ -1,11 +1,52 @@
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+
+// 1. הנה הייבוא של השומר שיצרנו הרגע
+import ProtectedRoute from './components/ProtectedRoute';
+
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import DashboardPage from './pages/DashboardPage';
+import ReceiptsPage from './pages/ReceiptsPage';
+import ReceiptDetailPage from './pages/ReceiptDetailPage';
+
 function App() {
   return (
-    <div className="min-h-screen bg-bgLight flex items-center justify-center">
-      <h1 className="text-4xl font-bold text-navy">
-        ClarityScan <span className="text-teal">Frontend</span>
-      </h1>
-    </div>
-  )
+    <AuthProvider>
+      <Router>
+        <Routes>
+      
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          
+         
+          <Route 
+            path="/dashboard" 
+            element={
+              <ProtectedRoute redirection="/login"><DashboardPage /></ProtectedRoute>
+            } 
+          />
+          
+          <Route 
+            path="/receipts" 
+            element={
+              <ProtectedRoute redirection="/login"><ReceiptsPage /></ProtectedRoute>
+            } 
+          />
+          
+          <Route 
+            path="/receipts/:id" 
+            element={
+              <ProtectedRoute redirection="/login"><ReceiptDetailPage /></ProtectedRoute>
+            } 
+          />
+
+         
+          <Route path="*" element={<Navigate to="/login" />} />
+        </Routes>
+      </Router>
+    </AuthProvider>
+  );
 }
 
-export default App
+export default App;

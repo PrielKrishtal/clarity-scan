@@ -1,0 +1,1 @@
+export default function LoginPage() { return <div>RecieptDetail Page</div>; }
