@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="YOUR_LOGO_URL_HERE" alt="ClarityScan Logo" width="380"/>
+<img src="assets/logo.png" alt="ClarityScan Logo" width="380"/>
 
 ### Smart Receipt Management — Powered by OCR & Computer Vision
 
