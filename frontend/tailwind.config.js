@@ -7,7 +7,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        navy:    '#1B3A4B',
+        navy:    '#102C49',
         teal:    '#2A9D8F',
         bgLight: '#F8FAFB',
         slate:   '#475569',
