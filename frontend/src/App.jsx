@@ -1,8 +1,8 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 
-
 import ProtectedRoute from './components/ProtectedRoute';
+import AppLayout from './components/AppLayout';
 
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -15,33 +15,15 @@ function App() {
     <AuthProvider>
       <Router>
         <Routes>
-      
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           
-         
-          <Route 
-            path="/dashboard" 
-            element={
-              <ProtectedRoute redirection="/login"><DashboardPage /></ProtectedRoute>
-            } 
-          />
-          
-          <Route 
-            path="/receipts" 
-            element={
-              <ProtectedRoute redirection="/login"><ReceiptsPage /></ProtectedRoute>
-            } 
-          />
-          
-          <Route 
-            path="/receipts/:id" 
-            element={
-              <ProtectedRoute redirection="/login"><ReceiptDetailPage /></ProtectedRoute>
-            } 
-          />
+          <Route element={<ProtectedRoute redirection="/login"><AppLayout /></ProtectedRoute>}>
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/receipts" element={<ReceiptsPage />} />
+            <Route path="/receipts/:id" element={<ReceiptDetailPage />} />
+          </Route>
 
-         
           <Route path="*" element={<Navigate to="/login" />} />
         </Routes>
       </Router>

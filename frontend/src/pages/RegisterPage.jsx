@@ -13,19 +13,58 @@ export default function RegisterPage() {
     const { register } = useAuth();
     const navigate = useNavigate();
 
-    const handleSubmit = async(e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        if (password !== confirmPassword) {
-            return setError("Passwords do not match");
-        }
         setError("");
+        
+        // Client-side validation: Ensure password and confirmation match before API call
+        if (password !== confirmPassword) {
+            setError("Passwords do not match.");
+            return;
+        }
+
         try {
             await register(email, password);
+            // On successful registration, redirect the user to the login portal
             navigate('/login');
-        } catch (error) {
-            setError("Registration failed. This email may already be in use.");
-        } 
-    }
+        } catch (err) {
+            console.error("Registration payload failed:", err);
+            
+            // Extract and parse specific error details from the backend response
+            if (err.response && err.response.data && err.response.data.detail) {
+                const serverError = err.response.data.detail;
+                
+                // Handle standard HTTP exception strings (e.g., 400 Bad Request)
+                if (typeof serverError === 'string') {
+                    const normalizedError = serverError.toLowerCase();
+                    // UX & Security enhancement: Sanitize 'user exists' errors to guide the user appropriately
+                    if (normalizedError.includes("already registered") || normalizedError.includes("already exists")) {
+                        setError("This account is already registered. Please sign in instead.");
+                    } else {
+                        setError(serverError);
+                    }
+                } 
+                // Handle Pydantic validation error arrays (e.g., 422 Unprocessable Entity)
+                else if (Array.isArray(serverError) && serverError.length > 0) {
+                    const validationMsg = serverError[0].msg;
+                    
+                    // UX enhancement: Map raw Pydantic password validation constraints to user-friendly messages
+                    if (validationMsg.includes("String should have at least") || validationMsg.includes("Value error")) {
+                        setError("Password must be at least 8 characters long and contain both letters and numbers.");
+                    } else {
+                        setError(validationMsg);
+                    }
+                } 
+                else {
+                    // Fallback for unrecognized server error data structures
+                    setError("Registration failed. Please verify your details and try again.");
+                }
+            } else {
+                // Handle scenarios where the server is unreachable, offline, or CORS fails
+                setError("Network error. Please check your connection or try again later.");
+            }
+        }
+    };
 
     return (
         <div className="min-h-screen flex items-center justify-center px-4 bg-bgLight">

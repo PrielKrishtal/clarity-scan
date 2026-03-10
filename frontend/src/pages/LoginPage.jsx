@@ -9,16 +9,17 @@ export default function LoginPage() {
     const [showPassword, setShowPassword] = useState(false);
     
 
-    const { login } = useAuth();
+    const { handleLogin } = useAuth();
     const navigate = useNavigate();
 
     const handleSubmit = async(e) => {
         e.preventDefault();
         setError("");
         try {
-            await login(email, password);
+            await handleLogin(email, password);
             navigate('/dashboard');
         } catch (error) {
+            console.error("The hidden error is: ", error);
             setError("Login failed: One or more credentials are incorrect. Please try again.")
         } 
     }
