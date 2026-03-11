@@ -1,20 +1,7 @@
-import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-
-const MOCK_RECEIPTS = [
-    { id: 1,  merchant: 'Superpharm',     date: '2026-03-08', category: 'Health',     amount: 84.50,  status: 'APPROVED' },
-    { id: 2,  merchant: 'Yellow',          date: '2026-03-07', category: 'Transport',  amount: 32.00,  status: 'REVIEW_NEEDED' },
-    { id: 3,  merchant: 'Shufersal',       date: '2026-03-06', category: 'Food',       amount: 215.30, status: 'APPROVED' },
-    { id: 4,  merchant: 'HOT Mobile',      date: '2026-03-05', category: 'Bills',      amount: 129.00, status: 'PROCESSING' },
-    { id: 5,  merchant: 'IKEA',            date: '2026-03-04', category: 'Shopping',   amount: 543.00, status: 'APPROVED' },
-    { id: 6,  merchant: 'Amazon',          date: '2026-03-03', category: 'Shopping',   amount: 97.40,  status: 'APPROVED' },
-    { id: 7,  merchant: 'Cafe Aroma',      date: '2026-03-02', category: 'Food',       amount: 28.50,  status: 'FAILED' },
-    { id: 8,  merchant: 'Paz Gas Station', date: '2026-03-01', category: 'Transport',  amount: 180.00, status: 'APPROVED' },
-    { id: 9,  merchant: 'Netflix',         date: '2026-02-28', category: 'Bills',      amount: 49.90,  status: 'UPLOADED' },
-    { id: 10, merchant: 'Office Depot',    date: '2026-02-27', category: 'Office',     amount: 312.75, status: 'REVIEW_NEEDED' },
-    { id: 11, merchant: 'Rami Levy',       date: '2026-02-26', category: 'Food',       amount: 178.60, status: 'APPROVED' },
-    { id: 12, merchant: 'Spotify',         date: '2026-02-25', category: 'Bills',      amount: 19.90,  status: 'APPROVED' },
-];
+import { useState, useMemo, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { getReceipts } from '../api/receipts';
+import { usePageData } from '../hooks/usePageData';
 
 const STATUS_STYLES = {
     APPROVED:      'bg-green-100 text-green-700',
@@ -38,50 +25,67 @@ const STATUS_OPTIONS = ['All', 'APPROVED', 'REVIEW_NEEDED', 'PROCESSING', 'UPLOA
 const PAGE_SIZE = 8;
 
 const exportToCSV = (data) => {
-    const headers = ['Merchant', 'Date', 'Category', 'Amount', 'Status'];
-    const rows = data.map(r => [r.merchant, r.date, r.category, r.amount.toFixed(2), r.status]);
+    const headers = ['Merchant', 'Date', 'Category', 'Amount'];
+    const rows = data.map(r => [
+        `"${(r.merchant_name || '').replace(/"/g, '""')}"`,
+        `"${r.receipt_date || ''}"`,
+        `"${r.category || ''}"`,
+        parseFloat(r.total_amount || 0).toFixed(2),
+    ]);
     const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
+    const encoded = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = 'receipts.csv';
+    a.setAttribute('href', encoded);
+    a.setAttribute('download', 'receipts.csv');
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    document.body.removeChild(a);
 };
-
-const EmptyState = ({ hasFilters }) => (
-    <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
-        <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5"
-             style={{ backgroundColor: 'rgba(42,157,143,0.1)' }}>
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.4} stroke="#2A9D8F" className="w-8 h-8">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-            </svg>
-        </div>
-        <p className="text-base font-semibold text-navy mb-1">
-            {hasFilters ? 'No receipts match your filters' : 'No receipts yet'}
-        </p>
-        <p className="text-sm text-slate-400 max-w-xs">
-            {hasFilters
-                ? 'Try adjusting your search or status filter to find what you\'re looking for.'
-                : 'Upload your first receipt to get started. OCR will extract the data automatically.'}
-        </p>
-    </div>
-);
 
 export default function ReceiptsPage() {
     const navigate = useNavigate();
+    const location = useLocation();
+    const [receipts, setReceipts] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [error, setError] = useState(null);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('All');
     const [page, setPage] = useState(1);
+    // ── CHANGE 2: date range state
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo]     = useState('');
 
+    const fetchReceipts = async (isRefresh = false) => {
+        try {
+            if (isRefresh) setRefreshing(true);
+            else setLoading(true);
+            
+            setError(null);
+            const data = await getReceipts();
+            setReceipts(data);
+        } catch (err) {
+            setError('Could not load receipts. Please try again later.');
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchReceipts();
+    }, [location.key]);
+
+  
     const filtered = useMemo(() => {
-        return MOCK_RECEIPTS.filter(r => {
-            const matchSearch = r.merchant.toLowerCase().includes(search.toLowerCase());
+        return receipts.filter(r => {
+            const matchSearch = r.merchant_name?.toLowerCase().includes(search.toLowerCase());
             const matchStatus = statusFilter === 'All' || r.status === statusFilter;
-            return matchSearch && matchStatus;
+            const matchFrom   = !dateFrom || r.receipt_date >= dateFrom;
+            const matchTo     = !dateTo   || r.receipt_date <= dateTo;
+            return matchSearch && matchStatus && matchFrom && matchTo;
         });
-    }, [search, statusFilter]);
+    }, [receipts, search, statusFilter, dateFrom, dateTo]);
 
     const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
     const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -92,15 +96,84 @@ export default function ReceiptsPage() {
         setPage(1);
     };
 
+    if (loading && !refreshing) {
+        return (
+            <div className="flex items-center justify-center h-96">
+                <div className="w-10 h-10 border-4 border-teal border-t-transparent rounded-full animate-spin"></div>
+            </div>
+        );
+    }
+
+    if (error && receipts.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center h-[60vh] space-y-4 px-6 text-center">
+                <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mb-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="#EF4444" className="w-8 h-8">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                    </svg>
+                </div>
+                <p className="text-slate-600 font-medium">{error}</p>
+                <button 
+                    onClick={() => fetchReceipts(true)}
+                    className="px-6 py-2.5 bg-teal text-white rounded-xl text-sm font-semibold shadow-sm hover:bg-opacity-90 transition-all"
+                >
+                    Try Again
+                </button>
+            </div>
+        );
+    }
+
+    if (receipts.length === 0 && !loading) {
+        return (
+            <div className="flex flex-col items-center justify-center h-[70vh] px-6 text-center">
+                <div className="w-20 h-20 rounded-3xl flex items-center justify-center mb-6"
+                     style={{ backgroundColor: 'rgba(42,157,143,0.1)' }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.2} stroke="#2A9D8F" className="w-10 h-10">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                    </svg>
+                </div>
+                <h2 className="text-2xl font-bold text-navy mb-2">Start your journey</h2>
+                <p className="text-slate-400 max-w-sm mb-8">
+                    Your receipt gallery is empty. Upload your first receipt to see the magic of AI OCR in action.
+                </p>
+            </div>
+        );
+    }
+
     return (
         <div className="p-8 md:p-10 space-y-6">
-
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-navy">Receipts</h1>
-                    <p className="text-sm text-slate-400 mt-1">{MOCK_RECEIPTS.length} receipts total</p>
+                    <p className="text-sm text-slate-400 mt-1">
+                        {filtered.length < receipts.length
+                            ? `${filtered.length} of ${receipts.length} receipts`
+                            : `${receipts.length} receipts total`}
+                    </p>
                 </div>
                 <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => fetchReceipts(true)}
+                        disabled={refreshing}
+                        className="p-2 flex items-center justify-center rounded-xl border border-slate-200 text-slate-500 bg-white hover:bg-slate-50 hover:text-teal hover:border-teal transition-all duration-150 disabled:opacity-50 shadow-sm"
+                        title="Refresh list"
+                    >
+                        <svg 
+                            xmlns="http://www.w3.org/2000/svg" 
+                            viewBox="0 0 24 24" 
+                            fill="none" 
+                            stroke="currentColor" 
+                            strokeWidth="2" 
+                            strokeLinecap="round" 
+                            strokeLinejoin="round" 
+                            className={`w-5 h-5 ${refreshing ? 'animate-spin text-teal' : ''}`}
+                        >
+                            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                            <path d="M21 3v5h-5" />
+                            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                            <path d="M3 21v-5h5" />
+                        </svg>
+                    </button>
                     <button
                         onClick={() => exportToCSV(filtered)}
                         className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 transition-colors duration-150"
@@ -110,18 +183,22 @@ export default function ReceiptsPage() {
                         </svg>
                         Export CSV
                     </button>
-                    <button
-                        onClick={() => navigate('/upload')}
-                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl text-white transition-colors duration-150"
-                        style={{ backgroundColor: '#2A9D8F' }}
-                        onMouseEnter={e => e.currentTarget.style.backgroundColor = '#238f82'}
-                        onMouseLeave={e => e.currentTarget.style.backgroundColor = '#2A9D8F'}
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-4 h-4">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.233-2.33 3 3 0 0 1 3.758 3.848A3.752 3.752 0 0 1 18 19.5H6.75Z" />
-                        </svg>
-                        Upload Receipt
-                    </button>
+
+                    <input
+                        type="date"
+                        value={dateFrom}
+                        onChange={e => { setDateFrom(e.target.value); setPage(1); }}
+                        className="px-3 py-2 text-sm border border-slate-200 rounded-xl bg-white text-slate-700 focus:ring-2 focus:ring-teal outline-none transition-all"
+                        title="From date"
+                    />
+                    <span className="text-slate-400 text-sm">→</span>
+                    <input
+                        type="date"
+                        value={dateTo}
+                        onChange={e => { setDateTo(e.target.value); setPage(1); }}
+                        className="px-3 py-2 text-sm border border-slate-200 rounded-xl bg-white text-slate-700 focus:ring-2 focus:ring-teal outline-none transition-all"
+                        title="To date"
+                    />
                 </div>
             </div>
 
@@ -152,7 +229,12 @@ export default function ReceiptsPage() {
                 </select>
             </div>
 
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden relative">
+                {refreshing && (
+                    <div className="absolute inset-0 bg-white/40 backdrop-blur-[1px] z-10 flex items-center justify-center">
+                        <div className="w-6 h-6 border-2 border-teal border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                )}
                 <div className="overflow-x-auto">
                     <table className="w-full">
                         <thead>
@@ -168,8 +250,8 @@ export default function ReceiptsPage() {
                         <tbody className="divide-y divide-slate-100">
                             {paginated.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6}>
-                                        <EmptyState hasFilters={hasFilters} />
+                                    <td colSpan={6} className="py-20 text-center text-slate-400 text-sm">
+                                        No receipts match your current filters.
                                     </td>
                                 </tr>
                             ) : (
@@ -180,10 +262,10 @@ export default function ReceiptsPage() {
                                         onClick={() => navigate(`/receipts/${receipt.id}`)}
                                     >
                                         <td className="px-6 py-4">
-                                            <p className="text-sm font-semibold text-navy">{receipt.merchant}</p>
+                                            <p className="text-sm font-semibold text-navy">{receipt.merchant_name || 'Processing...'}</p>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <p className="text-sm text-slate-400">{receipt.date}</p>
+                                            <p className="text-sm text-slate-400">{receipt.receipt_date || '-'}</p>
                                         </td>
                                         <td className="px-6 py-4">
                                             <span className="flex items-center gap-2 text-sm text-slate-600">
@@ -197,7 +279,7 @@ export default function ReceiptsPage() {
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <p className="text-sm font-bold text-navy">${receipt.amount.toFixed(2)}</p>
+                                            <p className="text-sm font-bold text-navy">${parseFloat(receipt.total_amount || 0).toFixed(2)}</p>
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <button
@@ -234,9 +316,7 @@ export default function ReceiptsPage() {
                                     key={n}
                                     onClick={() => setPage(n)}
                                     className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-medium transition-colors ${
-                                        page === n
-                                            ? 'text-white'
-                                            : 'border border-slate-200 text-slate-500 hover:bg-slate-50'
+                                        page === n ? 'text-white' : 'border border-slate-200 text-slate-500 hover:bg-slate-50'
                                     }`}
                                     style={page === n ? { backgroundColor: '#0F2D4A' } : {}}
                                 >

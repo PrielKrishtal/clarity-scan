@@ -104,7 +104,7 @@ export default function AppLayout() {
             </aside>
 
             <main className="flex-1 overflow-y-auto">
-                <Outlet />
+                 <Outlet context={{ openUploadModal: () => setIsUploadModalOpen(true) }} />
             </main>
 
             {isUploadModalOpen && (

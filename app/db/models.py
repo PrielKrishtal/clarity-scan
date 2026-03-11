@@ -16,6 +16,13 @@ class ReceiptStatus(enum.Enum):
     APPROVED = "APPROVED"
     FAILED = "FAILED"
 
+class ReceiptCategory(str, enum.Enum):
+    FOOD = "Food"
+    TRANSPORT = "Transport"
+    BILLS = "Bills"
+    SHOPPING = "Shopping"
+    HEALTH = "Health"  
+    OTHER = "Other"
 
 class Receipt(Base):
     __tablename__ = "receipts"
@@ -27,6 +34,9 @@ class Receipt(Base):
     tax_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
     total_amount: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(10, 2), nullable=True
+    )
+    category: Mapped[ReceiptCategory] = mapped_column(
+        Enum(ReceiptCategory), default=ReceiptCategory.OTHER, nullable=False
     )
     receipt_date: Mapped[Optional[date]] = mapped_column(nullable=True)
     status: Mapped[ReceiptStatus] = mapped_column(
@@ -54,6 +64,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     email_address: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     hashed_password: Mapped[str]
+    monthly_budget: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     # Creation date: Set once by the server, never updates
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

@@ -3,6 +3,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, Legend
 } from 'recharts';
+import { usePageData } from '../hooks/usePageData';
 
 const MOCK_MONTHLY_EXPENSES = [
     { month: 'Oct', total: 1240 },

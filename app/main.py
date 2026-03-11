@@ -4,7 +4,7 @@ from slowapi.errors import RateLimitExceeded
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import receipts, auth
 from app.core.limiter import limiter
-
+from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(
     title="ClarityScan API",
@@ -32,6 +32,7 @@ app.add_middleware(
     allow_headers=["*"], 
 )
 
+app.mount("/app/uploads", StaticFiles(directory="app/uploads"), name="uploads")
 
 @app.get("/health")
 async def health_check():

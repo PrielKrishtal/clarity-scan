@@ -131,16 +131,13 @@ async def update_receipt(
     db_receipt = await crud_receipt.get_receipt_by_id(
         db=db, receipt_id=receipt_id, user_id=current_user.id
     )
+    
     if not db_receipt:
         raise HTTPException(status_code=404, detail="Receipt not found")
 
-    if db_receipt.status != ReceiptStatus.REVIEW_NEEDED:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Only receipts in REVIEW_NEEDED state can be approved or updated.",
-        )
+    if db_receipt.status == ReceiptStatus.REVIEW_NEEDED:
+        db_receipt.status = ReceiptStatus.APPROVED
 
-    db_receipt.status = ReceiptStatus.APPROVED
     return await crud_receipt.update_user_receipt(
         db=db, db_receipt=db_receipt, update_data=receipt_update
     )
