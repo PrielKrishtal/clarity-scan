@@ -25,7 +25,7 @@ const STATUS_OPTIONS = ['All', 'APPROVED', 'REVIEW_NEEDED', 'PROCESSING', 'UPLOA
 const PAGE_SIZE = 8;
 
 const exportToCSV = (data) => {
-    const headers = ['Merchant', 'Date', 'Category', 'Amount'];
+    const headers = ['Merchant', 'Date', 'Category', 'Price'];
     const rows = data.map(r => [
         `"${(r.merchant_name || '').replace(/"/g, '""')}"`,
         `"${r.receipt_date || ''}"`,
@@ -243,7 +243,7 @@ export default function ReceiptsPage() {
                                 <th className="text-left px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wide">Date</th>
                                 <th className="text-left px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wide">Category</th>
                                 <th className="text-left px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wide">Status</th>
-                                <th className="text-right px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wide">Amount</th>
+                                <th className="text-right px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wide">Price</th>
                                 <th className="text-right px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wide">Action</th>
                             </tr>
                         </thead>

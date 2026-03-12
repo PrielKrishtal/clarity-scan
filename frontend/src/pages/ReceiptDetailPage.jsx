@@ -239,7 +239,7 @@ export default function ReceiptDetailPage() {
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
-                            <FieldRow label="Total Amount">
+                            <FieldRow label="Total Price">
                                 {editable ? (
                                     <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
                                     <input type="number" className={`${inputClass} pl-6`} value={form.total_amount || ''} onChange={(e) => handleChange('total_amount', e.target.value)} /></div>

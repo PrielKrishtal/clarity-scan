@@ -1,58 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, Legend
 } from 'recharts';
-import { usePageData } from '../hooks/usePageData';
 
-const MOCK_MONTHLY_EXPENSES = [
-    { month: 'Oct', total: 1240 },
-    { month: 'Nov', total: 980 },
-    { month: 'Dec', total: 1875 },
-    { month: 'Jan', total: 1102 },
-    { month: 'Feb', total: 1430 },
-    { month: 'Mar', total: 860 },
-];
-
-const MOCK_CATEGORY_DATA = [
-    { name: 'Food', value: 420 },
-    { name: 'Transport', value: 210 },
-    { name: 'Bills', value: 380 },
-    { name: 'Shopping', value: 290 },
-    { name: 'Other', value: 150 },
-];
-
-const MOCK_RECENT_RECEIPTS = [
-    { id: 1, merchant: 'Superpharm', amount: 84.50, date: '2026-03-08', status: 'APPROVED' },
-    { id: 2, merchant: 'Yellow', amount: 32.00, date: '2026-03-07', status: 'REVIEW_NEEDED' },
-    { id: 3, merchant: 'Shufersal', amount: 215.30, date: '2026-03-06', status: 'APPROVED' },
-    { id: 4, merchant: 'HOT Mobile', amount: 129.00, date: '2026-03-05', status: 'PROCESSING' },
-    { id: 5, merchant: 'IKEA', amount: 543.00, date: '2026-03-04', status: 'APPROVED' },
-];
-
-const MONTHLY_BUDGET = { spent: 860, limit: 1200 };
+import { useAuth } from '../context/AuthContext';
+import { updateBudget } from '../api/users';
+import { getReceipts } from '../api/receipts';
+import { FINANCIAL_TIPS } from '../data/financialTips';
 
 const PIE_COLORS = ['#0F2D4A', '#2A9D8F', '#F59E0B', '#EF4444', '#6366F1'];
+const BUDGET_PRESETS = [500, 1000, 2000, 5000];
+const CATEGORY_ICONS = { Food: '🍔', Transport: '🚗', Bills: '💡', Shopping: '🛍️', Health: '💊', Other: '📦' };
 
-const STATUS_STYLES = {
-    APPROVED:      'bg-green-100 text-green-700',
-    REVIEW_NEEDED: 'bg-orange-100 text-orange-700',
-    PROCESSING:    'bg-amber-100 text-amber-700',
-    UPLOADED:      'bg-blue-100 text-blue-700',
-    FAILED:        'bg-red-100 text-red-700',
-};
-
-const getTodayString = () =>
-    new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-
-const getTotalSpent = () =>
-    MOCK_MONTHLY_EXPENSES.reduce((sum, m) => sum + m.total, 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
+const getCurrentMonth = () => new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+const getTodayString = () => new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
 const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
         return (
-            <div className="bg-white border border-slate-200 rounded-lg px-4 py-2 shadow-lg">
-                <p className="text-xs text-slate-400 mb-1">{label}</p>
+            <div className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 shadow-lg">
+                <p className="text-xs text-slate-400 mb-0.5">{label}</p>
                 <p className="text-sm font-bold text-navy">${payload[0].value.toLocaleString('en-US')}</p>
             </div>
         );
@@ -60,197 +28,400 @@ const CustomTooltip = ({ active, payload, label }) => {
     return null;
 };
 
-const BudgetBar = ({ spent, limit }) => {
-    const pct = Math.min((spent / limit) * 100, 100);
-    const barColor = pct < 70 ? '#2A9D8F' : pct < 90 ? '#F59E0B' : '#EF4444';
+const TipCard = () => {
+    const tip = FINANCIAL_TIPS[new Date().getDate() % FINANCIAL_TIPS.length];
     return (
-        <div>
-            <div className="flex justify-between items-center mb-2">
-                <span className="text-xs text-slate-400">Monthly Budget</span>
-                <span className="text-xs font-semibold text-navy">
-                    ${spent.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    <span className="text-slate-400 font-normal"> / ${limit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+        <div className="bg-white rounded-2xl border border-slate-200 px-8 py-5 flex flex-col items-center text-center gap-2">
+            <div className="text-2xl">💡</div>
+            <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold text-navy">Financial Tip of the Day</p>
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                      style={{ backgroundColor: 'rgba(42,157,143,0.1)', color: '#2A9D8F' }}>
+                    {tip.tag}
                 </span>
             </div>
-            <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                <div
-                    className="h-full rounded-full transition-all duration-700"
-                    style={{ width: `${pct}%`, backgroundColor: barColor }}
-                />
-            </div>
-            <p className="text-xs text-slate-400 mt-1.5">{(100 - pct).toFixed(0)}% remaining this month</p>
+            <p className="text-sm text-slate-500 leading-relaxed">{tip.tip}</p>
         </div>
     );
 };
 
-const DropZone = () => {
-    const [isDragging, setIsDragging] = useState(false);
+const BudgetSetupCard = ({ onSave }) => {
+    const [selected, setSelected] = useState(null);
+    const [custom, setCustom] = useState('');
+    const effectiveValue = custom !== '' ? custom : selected;
+
+    const handleSave = () => {
+        const val = parseFloat(effectiveValue);
+        if (!val || val <= 0) return;
+        onSave(val);
+    };
+
     return (
-        <div
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={(e) => { e.preventDefault(); setIsDragging(false); }}
-            className={`rounded-xl border-2 border-dashed py-6 px-8 flex items-center gap-6 cursor-pointer transition-all duration-200 ${
-                isDragging
-                    ? 'border-teal bg-teal/5'
-                    : 'border-slate-200 hover:border-teal/40 hover:bg-white'
-            }`}
-        >
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                 style={{ backgroundColor: 'rgba(42,157,143,0.1)', color: '#2A9D8F' }}>
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-5 h-5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.233-2.33 3 3 0 0 1 3.758 3.848A3.752 3.752 0 0 1 18 19.5H6.75Z" />
-                </svg>
+        <div className="bg-white rounded-2xl border-2 px-5 py-4" style={{ borderColor: 'rgba(42,157,143,0.3)' }}>
+            <div className="flex items-center gap-3 mb-3">
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+                     style={{ backgroundColor: 'rgba(42,157,143,0.1)', color: '#2A9D8F' }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-4 h-4">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
+                    </svg>
+                </div>
+                <div>
+                    <p className="text-sm font-semibold text-navy">Set your budget for {getCurrentMonth()}</p>
+                    <p className="text-xs text-slate-400">Pick a preset or enter a custom amount</p>
+                </div>
             </div>
-            <div>
-                <p className="text-sm font-semibold text-navy">Drop a receipt to auto-scan</p>
-                <p className="text-xs text-slate-400 mt-0.5">Drag & drop a JPG or PNG — OCR runs automatically</p>
+            <div className="flex items-center gap-2 flex-wrap">
+                {BUDGET_PRESETS.map(p => (
+                    <button
+                        key={p}
+                        onClick={() => { setSelected(p); setCustom(''); }}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${
+                            selected === p && custom === ''
+                                ? 'border-teal text-teal bg-teal/5'
+                                : 'border-slate-200 text-slate-600 hover:border-teal/40'
+                        }`}
+                    >
+                        ${p.toLocaleString()}
+                    </button>
+                ))}
+                <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                    <input
+                        type="number"
+                        placeholder="Custom"
+                        value={custom}
+                        onChange={e => { setCustom(e.target.value); setSelected(null); }}
+                        className="pl-6 pr-3 py-1.5 w-24 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal outline-none transition-all"
+                    />
+                </div>
+                <button
+                    onClick={handleSave}
+                    disabled={!effectiveValue}
+                    className="ml-auto px-5 py-1.5 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-40"
+                    style={{ backgroundColor: '#2A9D8F' }}
+                >
+                    Save
+                </button>
             </div>
-            <div className="ml-auto">
-                <span className="text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 bg-white hover:bg-slate-50 transition-colors">
-                    Or browse files
-                </span>
+        </div>
+    );
+};
+
+const BudgetBarRow = ({ spent, limit, onEdit }) => {
+    const pct = Math.min((spent / limit) * 100, 100);
+    const barColor = pct < 70 ? '#2A9D8F' : pct < 90 ? '#F59E0B' : '#EF4444';
+    return (
+        <div className="bg-white rounded-2xl border border-slate-200 px-5 py-3">
+            <div className="flex items-center gap-4">
+                <div className="flex-1">
+                    <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-xs text-slate-400 font-medium">Budget for {getCurrentMonth()}</span>
+                        <span className="text-xs font-semibold text-navy">
+                            ${spent.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            <span className="text-slate-400 font-normal"> / ${limit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        </span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, backgroundColor: barColor }} />
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">{(100 - pct).toFixed(0)}% remaining this month</p>
+                </div>
+                <button
+                    onClick={onEdit}
+                    className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:text-teal hover:border-teal transition-all shrink-0"
+                    title="Edit budget"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z" />
+                    </svg>
+                </button>
             </div>
         </div>
     );
 };
 
 export default function DashboardPage() {
+    const { user } = useAuth();
+    const [receipts, setReceipts] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    const [budgetLimit, setBudgetLimit] = useState(() => {
+        return user?.monthly_budget
+            ? parseFloat(user.monthly_budget)
+            : parseFloat(localStorage.getItem('budget_limit')) || null;
+    });
+    const [budgetSaved, setBudgetSaved] = useState(() => {
+        return !!(user?.monthly_budget || localStorage.getItem('budget_limit'));
+    });
+
+    const handleBudgetSave = async (val) => {
+        await updateBudget(val);
+        localStorage.setItem('budget_limit', val);
+        setBudgetLimit(val);
+        setBudgetSaved(true);
+    };
+
+    useEffect(() => {
+        const loadData = async () => {
+            try {
+                const data = await getReceipts();
+                setReceipts(data);
+            } catch (error) {
+                console.error('Failed to load receipts', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadData();
+    }, []);
+
+    const now = new Date();
+    const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prevMonthPrefix = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+    const prevMonthName = prevMonthDate.toLocaleDateString('en-US', { month: 'short' });
+
+    const approvedReceipts = receipts.filter(r => r.status === 'APPROVED');
+    const approvedThisMonth = approvedReceipts.filter(r => r.receipt_date?.startsWith(currentMonthPrefix));
+    const approvedLastMonth = approvedReceipts.filter(r => r.receipt_date?.startsWith(prevMonthPrefix));
+
+    const monthlySpent = approvedThisMonth.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
+    const lastMonthSpent = approvedLastMonth.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
+    const totalTracked = approvedReceipts.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
+
+    const biggestReceipt = receipts.length > 0
+        ? [...receipts].sort((a, b) => parseFloat(b.total_amount || 0) - parseFloat(a.total_amount || 0))[0]
+        : null;
+
+    const avgReceipt = approvedThisMonth.length ? monthlySpent / approvedThisMonth.length : 0;
+
+    const momDiff = monthlySpent - lastMonthSpent;
+    const momPct = lastMonthSpent > 0 ? Math.abs((momDiff / lastMonthSpent) * 100).toFixed(0) : null;
+    const momDown = momDiff < 0;
+
+    const categoryData = Object.values(
+        approvedThisMonth.reduce((acc, r) => {
+            const cat = r.category || 'Other';
+            acc[cat] = acc[cat] || { name: cat, value: 0 };
+            acc[cat].value += parseFloat(r.total_amount || 0);
+            return acc;
+        }, {})
+    ).sort((a, b) => b.value - a.value);
+
+    const topCategory = categoryData.length > 0 ? categoryData[0] : null;
+    const topCategoryPct = topCategory && budgetLimit
+        ? ((topCategory.value / budgetLimit) * 100).toFixed(0)
+        : '—';
+
+    const monthlyChartData = (() => {
+        const months = [];
+        for (let i = 5; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const prefix = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            const label = d.toLocaleDateString('en-US', { month: 'short' });
+            const total = approvedReceipts
+                .filter(r => r.receipt_date?.startsWith(prefix))
+                .reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
+            months.push({ month: label, total: Math.round(total) });
+        }
+        return months;
+    })();
+
+    const hasChartData = monthlyChartData.some(m => m.total > 0);
+
     const summaryCards = [
         {
             label: 'Total Receipts',
-            value: MOCK_RECENT_RECEIPTS.length.toString(),
+            value: loading ? '—' : receipts.length.toString(),
             sub: 'All time',
-            icon: (
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-5 h-5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-                </svg>
-            ),
+            icon: <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>,
         },
         {
             label: 'This Month',
-            value: `$${MONTHLY_BUDGET.spent.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
-            sub: 'March 2026',
-            icon: (
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-5 h-5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
-                </svg>
-            ),
+            value: loading ? '—' : `$${monthlySpent.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+            sub: getCurrentMonth(),
+            icon: <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" /></svg>,
         },
         {
             label: 'Pending Review',
-            value: '2',
+            value: loading ? '—' : receipts.filter(r => r.status === 'REVIEW_NEEDED').length.toString(),
             sub: 'Needs attention',
-            icon: (
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-5 h-5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
-                </svg>
-            ),
+            icon: <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" /></svg>,
         },
     ];
 
     return (
-        <div className="p-8 md:p-10 space-y-8">
+        <div className="p-5 md:p-6 space-y-4">
 
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-navy">Dashboard</h1>
-                    <p className="text-sm text-slate-400 mt-1">{getTodayString()}</p>
+                    <h1 className="text-2xl font-bold text-navy">Overview</h1>
+                    <p className="text-sm text-slate-400 mt-0.5">{getTodayString()}</p>
                 </div>
                 <div className="text-right hidden sm:block">
                     <p className="text-xs text-slate-400 mb-0.5">Total tracked</p>
-                    <p className="text-xl font-bold text-navy">${getTotalSpent()}</p>
+                    <p className="text-xl font-bold text-navy">
+                        {loading ? '—' : `$${totalTracked.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
+                    </p>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {summaryCards.map((card) => (
-                    <div
-                        key={card.label}
-                        className="bg-white rounded-2xl border border-slate-200 p-6 flex items-center gap-4 hover:shadow-md transition-shadow duration-200"
-                    >
-                        <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+                    <div key={card.label} className="bg-white rounded-2xl border border-slate-200 p-4 flex items-center gap-3 hover:shadow-md transition-shadow duration-200">
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
                              style={{ backgroundColor: 'rgba(42,157,143,0.1)', color: '#2A9D8F' }}>
                             {card.icon}
                         </div>
                         <div>
                             <p className="text-xs text-slate-400 font-medium">{card.label}</p>
-                            <p className="text-2xl font-bold text-navy leading-tight mt-0.5">{card.value}</p>
-                            <p className="text-xs text-slate-400 mt-0.5">{card.sub}</p>
+                            <p className="text-xl font-bold text-navy leading-tight mt-0.5">{card.value}</p>
+                            <p className="text-xs text-slate-400">{card.sub}</p>
                         </div>
                     </div>
                 ))}
             </div>
 
-            <DropZone />
+            {budgetSaved && budgetLimit ? (
+                <BudgetBarRow spent={monthlySpent} limit={budgetLimit} onEdit={() => setBudgetSaved(false)} />
+            ) : (
+                <BudgetSetupCard onSave={handleBudgetSave} />
+            )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-7">
-                    <h2 className="text-sm font-semibold text-navy mb-1">Monthly Expenses</h2>
-                    <p className="text-xs text-slate-400 mb-6">Last 6 months — approved receipts only</p>
-                    <ResponsiveContainer width="100%" height={230}>
-                        <BarChart data={MOCK_MONTHLY_EXPENSES} barSize={30}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                            <XAxis dataKey="month" tick={{ fontSize: 12, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                            <YAxis tick={{ fontSize: 12, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} />
-                            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(42,157,143,0.06)' }} />
-                            <Bar dataKey="total" fill="#0F2D4A" radius={[5, 5, 0, 0]} />
-                        </BarChart>
-                    </ResponsiveContainer>
-                    <div className="mt-6 pt-5 border-t border-slate-100">
-                        <BudgetBar spent={MONTHLY_BUDGET.spent} limit={MONTHLY_BUDGET.limit} />
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-2xl border border-slate-200 p-7">
-                    <h2 className="text-sm font-semibold text-navy mb-1">By Category</h2>
-                    <p className="text-xs text-slate-400 mb-4">Current month breakdown</p>
-                    <ResponsiveContainer width="100%" height={220}>
-                        <PieChart>
-                            <Pie
-                                data={MOCK_CATEGORY_DATA}
-                                cx="50%"
-                                cy="44%"
-                                innerRadius={52}
-                                outerRadius={78}
-                                paddingAngle={3}
-                                dataKey="value"
-                            >
-                                {MOCK_CATEGORY_DATA.map((_, index) => (
-                                    <Cell key={index} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                                ))}
-                            </Pie>
-                            <Legend iconType="circle" iconSize={7} wrapperStyle={{ fontSize: '11px', color: '#64748b' }} />
-                            <Tooltip formatter={(value) => [`$${value.toLocaleString('en-US')}`, '']} />
-                        </PieChart>
-                    </ResponsiveContainer>
-                </div>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200">
-                <div className="px-7 py-5 border-b border-slate-100 flex items-center justify-between">
-                    <h2 className="text-sm font-semibold text-navy">Recent Receipts</h2>
-                    <a href="/receipts" className="text-xs font-medium transition-colors" style={{ color: '#2A9D8F' }}>
-                        View all →
-                    </a>
-                </div>
-                <div className="divide-y divide-slate-100">
-                    {MOCK_RECENT_RECEIPTS.map((receipt) => (
-                        <div key={receipt.id} className="px-7 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
-                            <div>
-                                <p className="text-sm font-medium text-navy">{receipt.merchant}</p>
-                                <p className="text-xs text-slate-400 mt-0.5">{receipt.date}</p>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${STATUS_STYLES[receipt.status]}`}>
-                                    {receipt.status.replace(/_/g, ' ')}
-                                </span>
-                                <span className="text-sm font-semibold text-navy w-16 text-right">${receipt.amount.toFixed(2)}</span>
-                            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-4">
+                    <h2 className="text-sm font-semibold text-navy mb-0.5">Monthly Expenses</h2>
+                    <p className="text-xs text-slate-400 mb-3">Last 6 months — approved receipts only</p>
+                    {hasChartData ? (
+                        <ResponsiveContainer width="100%" height={175}>
+                            <BarChart data={monthlyChartData} barSize={26}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                                <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} />
+                                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(42,157,143,0.06)' }} />
+                                <Bar dataKey="total" fill="#0F2D4A" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div className="h-44 flex items-center justify-center">
+                            <p className="text-sm text-slate-400 text-center">Upload your first receipts to see<br />your spending history here</p>
                         </div>
-                    ))}
+                    )}
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 p-4">
+                    <h2 className="text-sm font-semibold text-navy mb-0.5">By Category</h2>
+                    <p className="text-xs text-slate-400 mb-1">Current month breakdown</p>
+                    {categoryData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={220}>
+                            <PieChart>
+                                <Pie data={categoryData} cx="50%" cy="42%" innerRadius={52} outerRadius={80} paddingAngle={3} dataKey="value">
+                                    {categoryData.map((_, index) => (
+                                        <Cell key={index} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                                    ))}
+                                </Pie>
+                                <Legend iconType="circle" iconSize={7} wrapperStyle={{ fontSize: '11px', color: '#64748b' }} />
+                                <Tooltip formatter={(value) => [`$${value.toLocaleString('en-US')}`, '']} />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div className="h-52 flex items-center justify-center">
+                            <p className="text-sm text-slate-400 text-center">No approved receipts<br />this month yet</p>
+                        </div>
+                    )}
                 </div>
             </div>
+
+            <div>
+                <h2 className="text-sm font-semibold text-navy mb-2">Insights</h2>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+
+                    <div className="bg-white rounded-2xl border border-slate-200 p-3.5 flex items-start gap-2.5">
+                        <div className="text-xl mt-0.5">{topCategory ? (CATEGORY_ICONS[topCategory.name] || '📦') : '📦'}</div>
+                        <div>
+                            <p className="text-xs text-slate-400 font-medium">Top Category</p>
+                            {topCategory ? (
+                                <>
+                                    <p className="text-sm font-bold text-navy mt-0.5">{topCategory.name}</p>
+                                    <p className="text-xs text-slate-400">${topCategory.value.toLocaleString('en-US', { minimumFractionDigits: 2 })} · {topCategoryPct}% of budget</p>
+                                </>
+                            ) : (
+                                <p className="text-xs text-slate-300 mt-1">Upload receipts for a full breakdown</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-2xl border border-slate-200 p-3.5 flex items-start gap-2.5">
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5"
+                             style={{ backgroundColor: 'rgba(239,68,68,0.08)', color: '#EF4444' }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-4 h-4">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941" />
+                            </svg>
+                        </div>
+                        <div>
+                            <p className="text-xs text-slate-400 font-medium">Biggest Receipt</p>
+                            {biggestReceipt ? (
+                                <>
+                                    <p className="text-sm font-bold text-navy mt-0.5">{biggestReceipt.merchant_name}</p>
+                                    <p className="text-xs text-slate-400">${parseFloat(biggestReceipt.total_amount).toFixed(2)} · {biggestReceipt.receipt_date}</p>
+                                </>
+                            ) : (
+                                <p className="text-xs text-slate-300 mt-1">Your largest purchase will show here</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-2xl border border-slate-200 p-3.5 flex items-start gap-2.5">
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5"
+                             style={{ backgroundColor: 'rgba(42,157,143,0.1)', color: '#2A9D8F' }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-4 h-4">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <p className="text-xs text-slate-400 font-medium">Avg. Receipt</p>
+                            {approvedThisMonth.length > 0 ? (
+                                <>
+                                    <p className="text-sm font-bold text-navy mt-0.5">${avgReceipt.toFixed(2)}</p>
+                                    <p className="text-xs text-slate-400">Across {approvedThisMonth.length} approved</p>
+                                </>
+                            ) : (
+                                <p className="text-xs text-slate-300 mt-1">Approve receipts to see your average</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-2xl border border-slate-200 p-3.5 flex items-start gap-2.5">
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5"
+                             style={{ backgroundColor: momDown ? 'rgba(42,157,143,0.1)' : 'rgba(245,158,11,0.08)', color: momDown ? '#2A9D8F' : '#F59E0B' }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-4 h-4">
+                                {momDown
+                                    ? <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6 9 12.75l4.286-4.286a11.948 11.948 0 0 1 4.306 6.43l.776 2.898m0 0 3.182-5.511m-3.182 5.51-5.511-3.181" />
+                                    : <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941" />
+                                }
+                            </svg>
+                        </div>
+                        <div>
+                            <p className="text-xs text-slate-400 font-medium">vs Last Month</p>
+                            {momPct !== null ? (
+                                <>
+                                    <p className="text-sm font-bold mt-0.5" style={{ color: momDown ? '#2A9D8F' : '#F59E0B' }}>
+                                        {momDown ? '↓' : '↑'} {momPct}%
+                                    </p>
+                                    <p className="text-xs text-slate-400">
+                                        ${Math.abs(momDiff).toFixed(2)} {momDown ? 'less' : 'more'} than {prevMonthName}
+                                    </p>
+                                </>
+                            ) : (
+                                <p className="text-xs text-slate-300 mt-1">Not enough data yet to compare</p>
+                            )}
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <TipCard />
 
         </div>
     );

@@ -18,3 +18,12 @@ async def create_user(db: AsyncSession, user: user_schema.UserCreate) -> User:
     await db.commit()
     await db.refresh(db_user)
     return db_user
+
+
+async def update_user(db: AsyncSession, user: User, data: user_schema.UserUpdate) -> User:
+    update_dict = data.model_dump(exclude_unset=True)
+    for key, value in update_dict.items():
+        setattr(user, key, value)
+    await db.commit()
+    await db.refresh(user)
+    return user

@@ -89,3 +89,13 @@ async def get_current_user(
 @router.get("/me")
 async def read_users_me(current_user=Depends(get_current_user)):
     return current_user
+
+
+@router.put("/me", response_model=user_schema.UserResponse)
+async def update_current_user(
+    update_data: user_schema.UserUpdate,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.crud import user as crud_user
+    return await crud_user.update_user(db=db, user=current_user, data=update_data)

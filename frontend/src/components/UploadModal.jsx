@@ -2,12 +2,12 @@ import { useState, useRef } from 'react';
 import { uploadReceipt, createManualReceipt } from '../api/receipts';
 
 const CATEGORIES = [
-    { id: 'FOOD', label: 'Food', icon: '🍔' },
-    { id: 'TRANSPORT', label: 'Transport', icon: '🚗' },
-    { id: 'BILLS', label: 'Bills', icon: '💡' },
-    { id: 'SHOPPING', label: 'Shopping', icon: '🛍️' },
-    { id: 'HEALTH', label: 'Health', icon: '💊' },
-    { id: 'OTHER', label: 'Other', icon: '📦' }
+    { id: 'Food', label: 'Food', icon: '🍔' },
+    { id: 'Transport', label: 'Transport', icon: '🚗' },
+    { id: 'Bills', label: 'Bills', icon: '💡' },
+    { id: 'Shopping', label: 'Shopping', icon: '🛍️' },
+    { id: 'Health', label: 'Health', icon: '💊' },
+    { id: 'Other', label: 'Other', icon: '📦' }
 ];
 
 const ImageUploadTab = ({ onClose, onUploadSuccess }) => {
@@ -24,7 +24,7 @@ const ImageUploadTab = ({ onClose, onUploadSuccess }) => {
             setStatus('success');
             
             setTimeout(() => {
-                onUploadSuccess();
+                if (onUploadSuccess) onUploadSuccess();
                 onClose();
             }, 2000);
         } catch (err) {
@@ -77,7 +77,7 @@ const ImageUploadTab = ({ onClose, onUploadSuccess }) => {
 
 const ManualEntryTab = ({ onClose, onUploadSuccess }) => {
     const [loading, setLoading] = useState(false);
-    const [form, setForm] = useState({ merchant_name: '', receipt_date: '', category: 'OTHER', total_amount: '', tax_amount: '' });
+    const [form, setForm] = useState({ merchant_name: '', receipt_date: '', category: 'Other', total_amount: '', tax_amount: '' });
 
     const handleChange = (field, val) => {
         if ((field === 'total_amount' || field === 'tax_amount') && val < 0) return;
@@ -92,7 +92,7 @@ const ManualEntryTab = ({ onClose, onUploadSuccess }) => {
                 total_amount: parseFloat(form.total_amount), 
                 tax_amount: parseFloat(form.tax_amount || 0) 
             });
-            onUploadSuccess();
+            if (onUploadSuccess) onUploadSuccess();
             onClose();
         } catch (err) { 
             alert('Failed to save receipt.'); 
@@ -115,7 +115,7 @@ const ManualEntryTab = ({ onClose, onUploadSuccess }) => {
                     <input type="date" className={inputClass} value={form.receipt_date} onChange={(e) => handleChange('receipt_date', e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-400 uppercase">Amount</label>
+                    <label className="text-xs font-semibold text-slate-400 uppercase">Price</label>
                     <input type="number" className={inputClass} placeholder="0.00" value={form.total_amount} onChange={(e) => handleChange('total_amount', e.target.value)} />
                 </div>
             </div>
