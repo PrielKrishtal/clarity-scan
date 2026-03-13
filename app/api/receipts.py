@@ -135,6 +135,13 @@ async def update_receipt(
     if not db_receipt:
         raise HTTPException(status_code=404, detail="Receipt not found")
 
+    LOCKED_STATUSES = {ReceiptStatus.UPLOADED, ReceiptStatus.PROCESSING, ReceiptStatus.FAILED}
+    if db_receipt.status in LOCKED_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Receipt cannot be updated while in status '{db_receipt.status.value}'",
+        )
+
     if db_receipt.status == ReceiptStatus.REVIEW_NEEDED:
         db_receipt.status = ReceiptStatus.APPROVED
 

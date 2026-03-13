@@ -73,13 +73,13 @@ async def user_b():
 
 
 @pytest.fixture
-def auth_headers_a(user_a):
+async def auth_headers_a(user_a):
     token = create_access_token({"sub": user_a.email_address})
     return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture
-def auth_headers_b(user_b):
+async def auth_headers_b(user_b):
     token = create_access_token({"sub": user_b.email_address})
     return {"Authorization": f"Bearer {token}"}
 

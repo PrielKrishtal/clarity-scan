@@ -10,7 +10,7 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-async-4169E1?style=flat&logo=postgresql&logoColor=white)](https://postgresql.org)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker&logoColor=white)](https://docker.com)
 [![CI](https://img.shields.io/badge/CI-GitHub_Actions-2088FF?style=flat&logo=githubactions&logoColor=white)](https://github.com/features/actions)
-[![License](https://img.shields.io/badge/License-MIT-green?style=flat)](LICENSE)
+
 
 </div>
 
@@ -51,23 +51,18 @@ After text extraction, the pipeline applies several parsing layers before storin
 - **Multi-format date parsing** — tries 6 date formats (`%m/%d/%y`, `%d/%m/%Y`, `%Y-%m-%d`, and more) until one succeeds
 - **Tax auto-calculation** — tax is derived automatically as `total − subtotal` from the receipt; users never need to enter it manually
 
-**JWT Authentication**  
-Stateless JWT-based auth using `python-jose`. Passwords hashed with Argon2/Bcrypt via `passlib`. Every protected endpoint validates the token and scopes the query to the authenticated user — cross-user data access is impossible at the database layer.
+**Security & Auth**
+- JWT authentication via `python-jose` — every endpoint scopes queries to the authenticated user; cross-user access is impossible at the DB layer
+- Passwords hashed with Argon2/Bcrypt via `passlib`
+- File uploads validated with `python-magic` (reads first 2048 bytes to verify real MIME type, not just extension) — prevents disguised file attacks
+- Files written to disk non-blocking via `aiofiles`
+- Login rate-limited to 5 requests/minute per IP via `slowapi`
 
-**Secure File Upload**  
-Uploaded files are validated using `python-magic` — the server reads the first 2048 bytes and checks the actual MIME type, not just the filename extension. This prevents disguised file uploads (e.g. renaming `malware.exe` → `receipt.jpg`). Files are then written to disk non-blocking via `aiofiles`, keeping the upload handler fully async.
-
-**Financial Data Precision**  
-All monetary values are stored as `Numeric(10, 2)` (PostgreSQL `DECIMAL`) — never `float`. Floating-point arithmetic is unsuitable for financial data; `Decimal` guarantees exact representation to the cent.
-
-
-All database operations use `AsyncSession` — no thread blocking anywhere in the stack. Schema migrations managed with Alembic, with a full version history from initial schema through feature additions.
-
-**Rate Limiting**  
-Login endpoint protected with `slowapi` rate limiting (5 requests/minute per IP) to prevent brute force attacks.
-
-**Code Quality & CI**  
-`ruff` enforces linting and formatting across all Python code. A GitHub Actions workflow runs `ruff check .` on every push and PR to `main` — the pipeline fails on any linting error, keeping the codebase clean and PEP8-compliant.
+**Data & Infrastructure**
+- All monetary values stored as `Numeric(10, 2)` — never `float`; exact decimal representation to the cent
+- Fully async database layer using SQLAlchemy `AsyncSession` — no thread blocking anywhere in the stack
+- Schema migrations managed with Alembic
+- `ruff` linting enforced on every push via GitHub Actions — pipeline fails on any linting error
 
 ---
 
@@ -121,21 +116,7 @@ Login endpoint protected with `slowapi` rate limiting (5 requests/minute per IP)
 
 ## Testing
 
-12 tests covering the full stack — run with `pytest` against an in-memory SQLite database (no real DB or OCR required):
-
-| Category | What's tested |
-|---|---|
-| CRUD | Manual create, read all, read one, delete |
-| Security | Unauthenticated request → 401, cross-user data access → 404 |
-| FSM | `REVIEW_NEEDED → APPROVED` transition, blocked invalid transitions → 409 |
-| File validation | Valid JPEG upload → 202, non-image file → 400 |
-| Rate limiting | 6th login attempt → 429 |
-| CV pipeline | Corner ordering, 4-corner fallback, price string parsing |
-
-**Test infrastructure highlights:**
-- In-memory SQLite with full schema recreation per test — no database dependency
-- OCR pipeline mocked via `unittest.mock` — tests run without GPU or EasyOCR models
-- Two seeded users (`user_a`, `user_b`) for RBAC isolation tests
+12 pytest tests covering CRUD, FSM transitions, RBAC isolation, file validation, rate limiting, and CV pipeline logic — run against in-memory SQLite with the OCR pipeline mocked, no GPU or real database required.
 
 ---
 
@@ -176,21 +157,6 @@ clarity-scan/
 └── .github/workflows/    # CI pipeline
 ```
 
----
-
-## Getting Started
-
-```bash
-git clone https://github.com/your-username/clarity-scan.git
-cd clarity-scan
-cp .env.example .env        # fill in your secrets
-docker compose up --build   # spins up backend, frontend, and postgres
-```
-
-Frontend: `http://localhost:5173`  
-API docs: `http://localhost:8000/docs`
-
----
 
 <div align="center">
 
