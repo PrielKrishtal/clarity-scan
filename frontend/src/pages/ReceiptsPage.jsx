@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useOutletContext } from 'react-router-dom';
 import { getReceipts } from '../api/receipts';
 import { usePageData } from '../hooks/usePageData';
 
@@ -30,7 +30,7 @@ const exportToCSV = (data) => {
         `"${(r.merchant_name || '').replace(/"/g, '""')}"`,
         `"${r.receipt_date || ''}"`,
         `"${r.category || ''}"`,
-        parseFloat(r.total_amount || 0).toFixed(2),
+        `"$${parseFloat(r.total_amount || 0).toFixed(2)}"`
     ]);
     const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
     const encoded = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
@@ -45,6 +45,7 @@ const exportToCSV = (data) => {
 export default function ReceiptsPage() {
     const navigate = useNavigate();
     const location = useLocation();
+    const { refreshTrigger } = useOutletContext() || {};
     const [receipts, setReceipts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -52,7 +53,6 @@ export default function ReceiptsPage() {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('All');
     const [page, setPage] = useState(1);
-    // ── CHANGE 2: date range state
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo]     = useState('');
 
@@ -74,9 +74,8 @@ export default function ReceiptsPage() {
 
     useEffect(() => {
         fetchReceipts();
-    }, [location.key]);
+    }, [location.key, refreshTrigger]);
 
-  
     const filtered = useMemo(() => {
         return receipts.filter(r => {
             const matchSearch = r.merchant_name?.toLowerCase().includes(search.toLowerCase());

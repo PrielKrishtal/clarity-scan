@@ -34,6 +34,7 @@ export default function AppLayout() {
     const { user, handleLogout } = useAuth();
     const navigate = useNavigate();
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
 
     const initials = user?.email_address?.slice(0, 2).toUpperCase() || '??';
 
@@ -44,9 +45,7 @@ export default function AppLayout() {
 
     return (
         <div className="flex h-screen bg-bgLight overflow-hidden">
-
             <aside className="w-60 flex flex-col shrink-0 bg-navy">
-
                 <div className="h-16 flex items-center px-5 border-b border-white/10">
                     <div className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-teal"></span>
@@ -104,11 +103,14 @@ export default function AppLayout() {
             </aside>
 
             <main className="flex-1 overflow-y-auto">
-                 <Outlet context={{ openUploadModal: () => setIsUploadModalOpen(true) }} />
+                 <Outlet context={{ openUploadModal: () => setIsUploadModalOpen(true), refreshTrigger }} />
             </main>
 
             {isUploadModalOpen && (
-                <UploadModal onClose={() => setIsUploadModalOpen(false)} />
+                <UploadModal 
+                    onClose={() => setIsUploadModalOpen(false)} 
+                    onUploadSuccess={() => setRefreshTrigger(prev => prev + 1)} 
+                />
             )}
         </div>
     );

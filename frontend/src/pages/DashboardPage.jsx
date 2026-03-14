@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, Legend
@@ -142,6 +143,7 @@ const BudgetBarRow = ({ spent, limit, onEdit }) => {
 
 export default function DashboardPage() {
     const { user } = useAuth();
+    const { refreshTrigger } = useOutletContext() || {};
     const [receipts, setReceipts] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -155,6 +157,13 @@ export default function DashboardPage() {
     };
 
     useEffect(() => {
+        if (user?.monthly_budget) {
+            setBudgetLimit(parseFloat(user.monthly_budget));
+            setBudgetSaved(true);
+        }
+    }, [user?.monthly_budget]);
+    
+    useEffect(() => {
         const loadData = async () => {
             try {
                 const data = await getReceipts();
@@ -166,7 +175,7 @@ export default function DashboardPage() {
             }
         };
         loadData();
-    }, []);
+    }, [refreshTrigger]);
 
     const now = new Date();
     const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
