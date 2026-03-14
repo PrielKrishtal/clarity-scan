@@ -1,9 +1,12 @@
 import logging
+import os
 import re
 
+os.environ["FLAGS_use_mkldnn"] = "0"  # disable oneDNN — prevents Windows crash
+
 import cv2
-import easyocr
 import numpy as np
+from paddleocr import PaddleOCR
 from fastapi.concurrency import run_in_threadpool
 
 from app.crud import receipt as crud_receipt
@@ -12,14 +15,13 @@ from app.db.models import ReceiptStatus
 from app.schemas.receipt import ReceiptUpdate
 from datetime import datetime, date, timezone
 
-# Force DEBUG on this specific logger regardless of uvicorn's root config
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 
 class ReceiptScanner:
     def __init__(self):
-        self.reader = easyocr.Reader(["en"])
+        self.reader = PaddleOCR(use_angle_cls=True, lang="en", use_mkldnn=False, show_log=False)
 
     def _order_points(self, corners_lst):
         pts = corners_lst.reshape((4, 2))
@@ -64,19 +66,36 @@ class ReceiptScanner:
             # no clear decimal found, just strip all separators and hope for the best
             return float(cleaned.replace(",", "").replace(".", ""))
 
+
     def _extract_total_amount(self, text_list: list[str]) -> float | None:
         price_pattern = r"[\d,]+\s*[.,]\s*\d{2}"
 
+        # expanded keywords + added "tax" to exclusion so "TOTAL TAX" lines don't match
+        total_keywords = r"total|amount\s*due|balance\s*due|grand\s*total|total\s*due"
+
         for i, line in enumerate(text_list):
-            if re.search(r"tota", line, re.IGNORECASE) and not re.search(
-                r"sub", line, re.IGNORECASE
+            if re.search(total_keywords, line, re.IGNORECASE) and not re.search(
+                r"sub|saving|item|discount|tax", line, re.IGNORECASE
             ):
                 # price sometimes appears on the next line, so we look ahead a few rows
-                for j in range(i, min(i + 4, len(text_list))):
+                for j in range(i, min(i + 6, len(text_list))):
                     matches = re.findall(price_pattern, text_list[j])
                     if matches:
-                        return self._clean_price_string(matches[0])
+                        return self._clean_price_string(matches[-1])
+
+        # fallback: total is almost always the last price on the receipt —
+        # scan backwards but skip tax/fee/change/cash lines
+        for line in reversed(text_list):
+            if re.search(r"tax|fee|change|cash", line, re.IGNORECASE):
+                continue
+            matches = re.findall(price_pattern, line)
+            if matches:
+                candidate = self._clean_price_string(matches[-1])
+                if candidate > 0:
+                    return candidate
+
         return None
+
 
     def _extract_subtotal_amount(self, text_list: list[str]) -> float | None:
         price_pattern = r"[\d,]+\s*[.,]\s*\d{2}"
@@ -98,15 +117,11 @@ class ReceiptScanner:
 
     def _extract_company_name(self, text_list: list[str]) -> str:
         ignore_words = [
-            "receipt",
-            "win",
-            "survey",
-            "chance",
-            "welcome",
-            "customer",
-            "id",
-            "save",
-            "money",
+            "receipt", "win", "survey", "chance", "welcome", "customer",
+            "id", "save", "money", "doers", "done", "better", "expect", "less", "more",
+            "street", "avenue", "ave", "road", "rd", "blvd", "drive", "dr",
+            "lane", "ln", "floor", "suite", "ste", "thank", "please", "visit", "open", "daily",
+            "store", "manager", "cashier", "operator", "server",
         ]
 
         for line in text_list[:10]:
@@ -118,6 +133,14 @@ class ReceiptScanner:
             # phone numbers, zip codes, store IDs — skip anything number-heavy
             digits_count = sum(c.isdigit() for c in clean_line)
             if digits_count > 2:
+                continue
+
+            # skip lines that look like addresses (state abbreviation + zip code)
+            if re.search(r'\b[A-Z]{2}\s+\d{5}\b', clean_line):
+                continue
+
+            # skip URLs
+            if re.search(r'www\.|\.com|\.co|\.org|\.net', clean_line, re.IGNORECASE):
                 continue
 
             line_lower = clean_line.lower()
@@ -177,7 +200,7 @@ class ReceiptScanner:
         epsilon = 0.02 * perimeter  # 2% tolerance
         approx_corners = cv2.approxPolyDP(biggest_contour, epsilon, True)
 
-        # Fallback: If the contour doesn't yield exactly 4 corners (e.g., wrinkled receipt, fingers in frame),
+        # Fallback: If the contour doesn't yield exactly 4 corners 
         # force a minimum area bounding rectangle to mathematically guarantee exactly 4 corners.
         if len(approx_corners) != 4:
             rect = cv2.minAreaRect(biggest_contour)
@@ -203,12 +226,18 @@ class ReceiptScanner:
             img, transform_matrix, (int(width), int(height))
         )
 
-        gray_aligned = cv2.cvtColor(aligned_image, cv2.COLOR_BGR2GRAY)
+        aligned_image = aligned_image.astype(np.uint8)
 
-        result = self.reader.readtext(gray_aligned)
+        result = self.reader.ocr(aligned_image, cls=True)
 
-        # drop anything the OCR model wasn't confident about
-        clean_text_list = [item[1] for item in result if item[2] > 0.3]
+        # drop anything the OCR model wasn't confident about (30% confidence rate)
+        clean_text_list = []
+        if result and result[0]:
+            for line in result[0]:
+                text = line[1][0]
+                confidence = line[1][1]
+                if confidence > 0.3:
+                    clean_text_list.append(text)
 
         final_total = self._extract_total_amount(clean_text_list)
         subtotal = self._extract_subtotal_amount(clean_text_list)

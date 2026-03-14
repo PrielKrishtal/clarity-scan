@@ -12,16 +12,9 @@ app = FastAPI(
     version="1.0.0",
 )
 
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-app.include_router(receipts.router)
-app.include_router(auth.router)
-
-# TODO: Update this to the real Frontend URL (e.g., https://clarityscan.vercel.app) before deploying backend to Render.
-# Using pydantic-settings to load this from an environment variable would be best.
 origins = [
-    "http://localhost:5173",  
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
 ]
 
 app.add_middleware(
@@ -31,6 +24,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"], 
 )
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+app.include_router(receipts.router)
+app.include_router(auth.router)
+
+# TODO: Update this to the real Frontend URL (e.g., https://clarityscan.vercel.app) before deploying backend to Render.
+# Using pydantic-settings to load this from an environment variable would be best.
 
 app.mount("/app/uploads", StaticFiles(directory="app/uploads"), name="uploads")
 

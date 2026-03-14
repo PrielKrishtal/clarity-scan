@@ -35,7 +35,7 @@ export default function AppLayout() {
     const navigate = useNavigate();
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
-    const initials = user?.email?.slice(0, 2).toUpperCase() || '??';
+    const initials = user?.email_address?.slice(0, 2).toUpperCase() || '??';
 
     const onLogout = () => {
         handleLogout();
@@ -91,7 +91,7 @@ export default function AppLayout() {
                             <span className="text-teal text-xs font-bold">{initials}</span>
                         </div>
                         <div className="flex-1 min-w-0">
-                            <p className="text-white/80 text-xs truncate">{user?.email || 'Account'}</p>
+                            <p className="text-white/80 text-xs truncate">{user?.email_address || 'Account'}</p>
                             <button
                                 onClick={onLogout}
                                 className="text-white/40 hover:text-teal text-xs transition-colors mt-0.5"

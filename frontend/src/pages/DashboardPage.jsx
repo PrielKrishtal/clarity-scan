@@ -145,18 +145,11 @@ export default function DashboardPage() {
     const [receipts, setReceipts] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    const [budgetLimit, setBudgetLimit] = useState(() => {
-        return user?.monthly_budget
-            ? parseFloat(user.monthly_budget)
-            : parseFloat(localStorage.getItem('budget_limit')) || null;
-    });
-    const [budgetSaved, setBudgetSaved] = useState(() => {
-        return !!(user?.monthly_budget || localStorage.getItem('budget_limit'));
-    });
+    const [budgetLimit, setBudgetLimit] = useState(user?.monthly_budget ? parseFloat(user.monthly_budget) : null);
+    const [budgetSaved, setBudgetSaved] = useState(!!user?.monthly_budget);
 
     const handleBudgetSave = async (val) => {
         await updateBudget(val);
-        localStorage.setItem('budget_limit', val);
         setBudgetLimit(val);
         setBudgetSaved(true);
     };

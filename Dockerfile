@@ -1,17 +1,21 @@
-FROM python:3.12-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
-
-RUN apt-get update && apt-get install -y --no-install-recommends libmagic1 \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libmagic1 \
+    libgl1 \
+    libglib2.0-0 \
+    libgomp1 \
+    libstdc++6 \
+    libgcc-s1 \
+    gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Install Python dependencies
 COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir -r requirements.txt
 
-
 COPY . .
-
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
