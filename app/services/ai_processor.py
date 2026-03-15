@@ -1,8 +1,9 @@
 import logging
 import os
 import re
+import tempfile
 
-os.environ["FLAGS_use_mkldnn"] = "0"  # disable oneDNN — prevents Windows crash
+os.environ["FLAGS_use_mkldnn"] = "0"  # disable oneDNN — prevents Windows crash, harmless on Linux/Render
 
 import cv2
 import numpy as np
@@ -13,6 +14,7 @@ from app.crud import receipt as crud_receipt
 from app.db.database import AsyncSessionLocal
 from app.db.models import ReceiptStatus
 from app.schemas.receipt import ReceiptUpdate
+from app.core.storage import download_file
 from datetime import datetime, date, timezone
 
 logger = logging.getLogger(__name__)
@@ -56,16 +58,12 @@ class ReceiptScanner:
         # standard price format: rightmost separator followed by exactly 2 digits
         if last_sep_index == len(cleaned) - 3:
             integer_part = cleaned[:last_sep_index]
-            decimal_part = cleaned[last_sep_index + 1 :]
-
+            decimal_part = cleaned[last_sep_index + 1:]
             integer_part = integer_part.replace(",", "").replace(".", "")
-
             return float(f"{integer_part}.{decimal_part}")
-
         else:
             # no clear decimal found, just strip all separators and hope for the best
             return float(cleaned.replace(",", "").replace(".", ""))
-
 
     def _extract_total_amount(self, text_list: list[str]) -> float | None:
         price_pattern = r"[\d,]+\s*[.,]\s*\d{2}"
@@ -95,7 +93,6 @@ class ReceiptScanner:
                     return candidate
 
         return None
-
 
     def _extract_subtotal_amount(self, text_list: list[str]) -> float | None:
         price_pattern = r"[\d,]+\s*[.,]\s*\d{2}"
@@ -155,12 +152,12 @@ class ReceiptScanner:
         date_pattern = r"\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b"
 
         formats_to_try = [
-            "%m/%d/%y",  # 11/13/17
-            "%m/%d/%Y",  # 11/13/2017
-            "%d/%m/%Y",  # 13/11/2017
-            "%d-%m-%Y",  # 13-11-2017
-            "%Y-%m-%d",  # 2017-11-13
-            "%Y.%m.%d",  # 2017.11.13
+            "%m/%d/%y",   # 11/13/17
+            "%m/%d/%Y",   # 11/13/2017
+            "%d/%m/%Y",   # 13/11/2017
+            "%d-%m-%Y",   # 13-11-2017
+            "%Y-%m-%d",   # 2017-11-13
+            "%Y.%m.%d",   # 2017.11.13
         ]
 
         for line in text_list:
@@ -174,86 +171,101 @@ class ReceiptScanner:
                         continue
         return None
 
-    def scan(self, image_path: str) -> dict:
-        img = cv2.imread(image_path)
-        if img is None:
-            raise ValueError(
-                f"Failed to load image. File may be corrupted or missing at: {image_path}"
+    def scan(self, image_filename: str) -> dict:
+        """
+        Downloads the image from Supabase Storage to a temp file,
+        runs OCR, then cleans up the temp file.
+        """
+        # Download from Supabase into a temporary file
+        image_bytes = download_file(image_filename)
+
+        suffix = "." + image_filename.rsplit(".", 1)[-1]
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(image_bytes)
+            tmp_path = tmp.name
+
+        try:
+            img = cv2.imread(tmp_path)
+            if img is None:
+                raise ValueError(f"Failed to decode image downloaded from Supabase: {image_filename}")
+
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+            blur = cv2.GaussianBlur(gray, (5, 5), 0)
+
+            # Otsu figures out the threshold automatically — works well for paper on a table
+            _, thresh_blob = cv2.threshold(
+                blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
             )
 
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            contours, _ = cv2.findContours(
+                thresh_blob, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
 
-        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+            biggest_contour = max(contours, key=cv2.contourArea)
 
-        # Otsu figures out the threshold automatically — works well for paper on a table
-        _, thresh_blob = cv2.threshold(
-            blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-        )
+            perimeter = cv2.arcLength(biggest_contour, True)
+            epsilon = 0.02 * perimeter  # 2% tolerance
+            approx_corners = cv2.approxPolyDP(biggest_contour, epsilon, True)
 
-        contours, _ = cv2.findContours(
-            thresh_blob, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
+            # Fallback: If the contour doesn't yield exactly 4 corners (e.g., wrinkled receipt, fingers in frame),
+            # force a minimum area bounding rectangle to mathematically guarantee exactly 4 corners.
+            if len(approx_corners) != 4:
+                rect = cv2.minAreaRect(biggest_contour)
+                approx_corners = cv2.boxPoints(rect)
 
-        biggest_contour = max(contours, key=cv2.contourArea)
+            # At this point, approx_corners is guaranteed to represent exactly 4 points.
+            ordered_corners = self._order_points(approx_corners)
 
-        perimeter = cv2.arcLength(biggest_contour, True)
-        epsilon = 0.02 * perimeter  # 2% tolerance
-        approx_corners = cv2.approxPolyDP(biggest_contour, epsilon, True)
+            width_top = np.linalg.norm(ordered_corners[0] - ordered_corners[1])
+            width_bottom = np.linalg.norm(ordered_corners[2] - ordered_corners[3])
+            width = max(width_top, width_bottom)  # Picks the larger number
 
-        # Fallback: If the contour doesn't yield exactly 4 corners 
-        # force a minimum area bounding rectangle to mathematically guarantee exactly 4 corners.
-        if len(approx_corners) != 4:
-            rect = cv2.minAreaRect(biggest_contour)
-            approx_corners = cv2.boxPoints(rect)
+            height_top = np.linalg.norm(ordered_corners[0] - ordered_corners[3])
+            height_bottom = np.linalg.norm(ordered_corners[1] - ordered_corners[2])
+            height = max(height_top, height_bottom)
 
-        # At this point, approx_corners is guaranteed to represent exactly 4 points.
-        ordered_corners = self._order_points(approx_corners)
+            dest_points = np.float32(
+                [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]]
+            )
+            ordered_corners = np.float32(ordered_corners)
+            transform_matrix = cv2.getPerspectiveTransform(ordered_corners, dest_points)
+            aligned_image = cv2.warpPerspective(
+                img, transform_matrix, (int(width), int(height))
+            )
 
-        width_top = np.linalg.norm(ordered_corners[0] - ordered_corners[1])
-        width_bottom = np.linalg.norm(ordered_corners[2] - ordered_corners[3])
-        width = max(width_top, width_bottom)  # Picks the larger number
+            aligned_image = aligned_image.astype(np.uint8)
 
-        height_top = np.linalg.norm(ordered_corners[0] - ordered_corners[3])
-        height_bottom = np.linalg.norm(ordered_corners[1] - ordered_corners[2])
-        height = max(height_top, height_bottom)
+            result = self.reader.ocr(aligned_image, cls=True)
 
-        dest_points = np.float32(
-            [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]]
-        )
-        ordered_corners = np.float32(ordered_corners)
-        transform_matrix = cv2.getPerspectiveTransform(ordered_corners, dest_points)
-        aligned_image = cv2.warpPerspective(
-            img, transform_matrix, (int(width), int(height))
-        )
+            # drop anything the OCR model wasn't confident about
+            clean_text_list = []
+            if result and result[0]:
+                for line in result[0]:
+                    text = line[1][0]
+                    confidence = line[1][1]
+                    if confidence > 0.3:
+                        clean_text_list.append(text)
 
-        aligned_image = aligned_image.astype(np.uint8)
+            final_total = self._extract_total_amount(clean_text_list)
+            subtotal = self._extract_subtotal_amount(clean_text_list)
+            company = self._extract_company_name(clean_text_list)
+            receipt_date = self._extract_date(clean_text_list)
+            if final_total and subtotal:
+                calculated_tax = round(final_total - subtotal, 2)
+            else:
+                calculated_tax = None
 
-        result = self.reader.ocr(aligned_image, cls=True)
+            return {
+                "merchant_name": company,
+                "total_amount": final_total,
+                "tax_amount": calculated_tax,
+                "receipt_date": receipt_date,
+            }
 
-        # drop anything the OCR model wasn't confident about (30% confidence rate)
-        clean_text_list = []
-        if result and result[0]:
-            for line in result[0]:
-                text = line[1][0]
-                confidence = line[1][1]
-                if confidence > 0.3:
-                    clean_text_list.append(text)
-
-        final_total = self._extract_total_amount(clean_text_list)
-        subtotal = self._extract_subtotal_amount(clean_text_list)
-        company = self._extract_company_name(clean_text_list)
-        receipt_date = self._extract_date(clean_text_list)
-        if final_total and subtotal:
-            calculated_tax = round(final_total - subtotal, 2)
-        else:
-            calculated_tax = None
-
-        return {
-            "merchant_name": company,
-            "total_amount": final_total,
-            "tax_amount": calculated_tax,
-            "receipt_date": receipt_date,
-        }
+        finally:
+            # Always clean up the temp file even if OCR fails
+            os.unlink(tmp_path)
 
 
 async def process_receipt_task(receipt_id: str, user_id: int):

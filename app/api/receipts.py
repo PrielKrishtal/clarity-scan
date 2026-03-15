@@ -1,8 +1,6 @@
-import os
 import uuid
 from typing import List
 
-import aiofiles
 import magic
 from fastapi import (
     APIRouter,
@@ -16,18 +14,13 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-
 from app.api.auth import get_current_user
 from app.crud import receipt as crud_receipt
 from app.db.database import get_db
-from app.db.models import User
+from app.db.models import User, ReceiptStatus
 from app.schemas import receipt as schemas
 from app.services.ai_processor import process_receipt_task
-from app.db.models import ReceiptStatus
-
-# --- Constants & Setup ---
-UPLOAD_DIR = "app/uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+from app.core.storage import upload_file, get_signed_url
 
 router = APIRouter(prefix="/receipts", tags=["Receipts"])
 
@@ -44,7 +37,6 @@ async def create_receipt_manual(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-
     return await crud_receipt.create_manual_receipt(
         db=db, receipt=receipt, user_id=current_user.id
     )
@@ -66,24 +58,23 @@ async def upload_receipt_image(
     await file.seek(0)
     mime = magic.from_buffer(head, mime=True)
     if mime not in SAFE_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="File must be an image")
+        raise HTTPException(status_code=400, detail="File must be an image (JPEG or PNG)")
 
     file_type = SAFE_EXTENSIONS[mime]
-
-    unique_filename = f"{uuid.uuid4().hex}.{file_type}"
-    full_path = os.path.join(UPLOAD_DIR, unique_filename)
-
     content = await file.read()
+
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
 
-    async with aiofiles.open(full_path, mode="wb") as f:
-        await f.write(content)
+    # Upload to Supabase Storage — filename is the stored key
+    unique_filename = f"{uuid.uuid4().hex}.{file_type}"
+    upload_file(unique_filename, content, mime)
 
+    # Store just the filename (not a local path) in the DB
     new_receipt = await crud_receipt.create_receipt_from_upload(
-        db, full_path, current_user.id
+        db, unique_filename, current_user.id
     )
 
     background_tasks.add_task(process_receipt_task, new_receipt.id, current_user.id)
@@ -99,9 +90,14 @@ async def get_receipts(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await crud_receipt.get_user_receipts(
+    receipts = await crud_receipt.get_user_receipts(
         db=db, user_id=current_user.id, skip=skip, limit=limit
     )
+    # Attach signed URLs for any receipt that has an image
+    for receipt in receipts:
+        if receipt.image_path:
+            receipt.image_url = get_signed_url(receipt.image_path)
+    return receipts
 
 
 # 3. READ ONE
@@ -116,10 +112,15 @@ async def get_receipt(
     )
     if not receipt:
         raise HTTPException(status_code=404, detail="Receipt not found")
+
+    # Attach a fresh signed URL for the image
+    if receipt.image_path:
+        receipt.image_url = get_signed_url(receipt.image_path)
+
     return receipt
 
 
-# 4. UPDATE(put)
+# 4. UPDATE (put)
 @router.put("/{receipt_id}", response_model=schemas.ReceiptResponse)
 async def update_receipt(
     receipt_id: str,
@@ -127,11 +128,10 @@ async def update_receipt(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-
     db_receipt = await crud_receipt.get_receipt_by_id(
         db=db, receipt_id=receipt_id, user_id=current_user.id
     )
-    
+
     if not db_receipt:
         raise HTTPException(status_code=404, detail="Receipt not found")
 

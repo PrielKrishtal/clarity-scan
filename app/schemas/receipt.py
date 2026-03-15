@@ -33,6 +33,7 @@ class ReceiptResponse(BaseModel):
     tax_amount: Decimal | None = None
     receipt_date: date | None = None
     image_path: Optional[str] = None
+    image_url: Optional[str] = None
     uploaded_at: datetime | None = None
     processed_at: datetime | None = None
     model_config = ConfigDict(from_attributes=True)

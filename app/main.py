@@ -4,7 +4,6 @@ from slowapi.errors import RateLimitExceeded
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import receipts, auth
 from app.core.limiter import limiter
-from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(
     title="ClarityScan API",
@@ -15,6 +14,8 @@ app = FastAPI(
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    # Add your Vercel URL here after deploying frontend, e.g.:
+    # "https://clarityscan.vercel.app",
 ]
 
 app.add_middleware(
@@ -22,7 +23,7 @@ app.add_middleware(
     allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"], 
+    allow_headers=["*"],
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -30,10 +31,8 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.include_router(receipts.router)
 app.include_router(auth.router)
 
-# TODO: Update this to the real Frontend URL (e.g., https://clarityscan.vercel.app) before deploying backend to Render.
-# Using pydantic-settings to load this from an environment variable would be best.
+# Note: StaticFiles removed — images are now served via Supabase Storage signed URLs
 
-app.mount("/app/uploads", StaticFiles(directory="app/uploads"), name="uploads")
 
 @app.get("/health")
 async def health_check():

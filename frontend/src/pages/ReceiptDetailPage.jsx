@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { getReceiptById, updateReceipt, deleteReceipt } from '../api/receipts';
 import { usePageData } from '../hooks/usePageData';
 
-const SERVER_URL = import.meta.env.VITE_API_URL;
 
 const CATEGORIES = [
     { id: 'Food', label: 'Food' },
@@ -139,13 +138,7 @@ export default function ReceiptDetailPage() {
         } catch (err) { alert('Failed to delete receipt.'); }
     };
 
-    const getImageUrl = () => {
-        if (!form.image_path) return null;
-        if (form.image_path.startsWith('http')) return form.image_path;
-        return `${SERVER_URL}/${form.image_path.replace(/\\/g, '/')}`;
-    };
-
-    const fullImageUrl = getImageUrl();
+    const fullImageUrl = form.image_url || null;
 
     return (
         <div className="p-6 md:p-8 space-y-5 h-full flex flex-col">
