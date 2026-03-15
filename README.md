@@ -11,7 +11,7 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker&logoColor=white)](https://docker.com)
 [![CI](https://img.shields.io/badge/CI-GitHub_Actions-2088FF?style=flat&logo=githubactions&logoColor=white)](https://github.com/features/actions)
 
-🔗 **[Live Demo](https://your-demo-url.com)** &nbsp;·&nbsp; ⚠️ *Hosted on Render free tier — may take ~30s to wake up*
+🔗 **[Live Demo](https://clarity-scan-three.vercel.app/)** &nbsp;·&nbsp; ⚠️ *Hosted on Render free tier — may take ~30s to wake up*
 
 </div>
 

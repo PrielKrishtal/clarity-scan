@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import UploadModal from './UploadModal';
+import LegalFooter from '../components/LegalFooter';
 
 const NAV_ITEMS = [
     {
@@ -102,8 +103,11 @@ export default function AppLayout() {
                 </div>
             </aside>
 
-            <main className="flex-1 overflow-y-auto">
-                 <Outlet context={{ openUploadModal: () => setIsUploadModalOpen(true), refreshTrigger }} />
+            <main className="flex-1 overflow-y-auto flex flex-col">
+                <div className="flex-1">
+                    <Outlet context={{ openUploadModal: () => setIsUploadModalOpen(true), refreshTrigger }} />
+                </div>
+                <LegalFooter className="py-4 mt-auto border-t border-slate-200 bg-white/50" />
             </main>
 
             {isUploadModalOpen && (

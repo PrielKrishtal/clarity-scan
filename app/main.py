@@ -1,3 +1,5 @@
+import os
+import json
 from fastapi import FastAPI
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -14,9 +16,15 @@ app = FastAPI(
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    # Add your Vercel URL here after deploying frontend, e.g.:
-    # "https://clarityscan.vercel.app",
+    "https://clarity-scan-three.vercel.app", 
 ]
+
+env_origins = os.environ.get("BACKEND_CORS_ORIGINS")
+if env_origins:
+    try:
+        origins = json.loads(env_origins)
+    except Exception as e:
+        print(f"Warning: Could not parse BACKEND_CORS_ORIGINS. Using default origins. Error: {e}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,12 +39,6 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.include_router(receipts.router)
 app.include_router(auth.router)
 
-# Note: StaticFiles removed — images are now served via Supabase Storage signed URLs
-
-
 @app.get("/health")
 async def health_check():
-    """
-    Sanity check endpoint to verify the API is running.
-    """
     return {"status": "ok", "message": "ClarityScan API is up and running!"}

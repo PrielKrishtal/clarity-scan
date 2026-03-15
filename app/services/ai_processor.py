@@ -23,7 +23,21 @@ logger.setLevel(logging.DEBUG)
 
 class ReceiptScanner:
     def __init__(self):
-        self.reader = PaddleOCR(use_angle_cls=True, lang="en", use_mkldnn=False, show_log=False)
+        self.reader = None
+
+    def _get_reader(self):
+        """Internal helper to load the OCR only when needed"""
+        if self.reader is None:
+            logger.info("Initializing PaddleOCR for the first time...")
+            # Optimized settings for low-memory environments
+            self.reader = PaddleOCR(
+                use_angle_cls=False,  # Saves significant RAM
+                lang="en", 
+                use_mkldnn=False, 
+                show_log=False,
+                rec_batch_num=1
+            )
+        return self.reader
 
     def _order_points(self, corners_lst):
         pts = corners_lst.reshape((4, 2))
@@ -235,8 +249,8 @@ class ReceiptScanner:
             )
 
             aligned_image = aligned_image.astype(np.uint8)
-
-            result = self.reader.ocr(aligned_image, cls=True)
+            ocr_engine = self._get_reader()
+            result = ocr_engine.ocr(aligned_image, cls=False)
 
             # drop anything the OCR model wasn't confident about
             clean_text_list = []

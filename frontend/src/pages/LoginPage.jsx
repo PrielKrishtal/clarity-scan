@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
+import LegalFooter from '../components/LegalFooter';
+
 export default function LoginPage() {
     const [email, setEmail] = useState(""); 
     const [password, setPassword] = useState(""); 
@@ -128,9 +130,8 @@ export default function LoginPage() {
                     </p>
                 </div>
                 
-                <p className="text-center text-xs text-slate-400 mt-6">
-                    © 2026 ClarityScan. All rights reserved.
-                </p>
+                <LegalFooter />
+                
             </div>
         </div>
     );
