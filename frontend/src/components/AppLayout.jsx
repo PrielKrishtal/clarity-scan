@@ -36,6 +36,7 @@ export default function AppLayout() {
     const navigate = useNavigate();
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
 
     const initials = user?.email_address?.slice(0, 2).toUpperCase() || '??';
 
@@ -44,9 +45,24 @@ export default function AppLayout() {
         navigate('/login');
     };
 
+    const closeSidebar = () => setSidebarOpen(false);
+
     return (
         <div className="flex h-screen bg-bgLight overflow-hidden">
-            <aside className="w-60 flex flex-col shrink-0 bg-navy">
+
+            {sidebarOpen && (
+                <div
+                    className="fixed inset-0 z-30 bg-black/40 md:hidden"
+                    onClick={closeSidebar}
+                />
+            )}
+
+            <aside className={`
+                fixed inset-y-0 left-0 z-40 w-60 flex flex-col shrink-0 bg-navy
+                transform transition-transform duration-200 ease-in-out
+                ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+                md:relative md:translate-x-0
+            `}>
                 <div className="h-16 flex items-center px-5 border-b border-white/10">
                     <div className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-teal"></span>
@@ -59,6 +75,7 @@ export default function AppLayout() {
                         <NavLink
                             key={item.name}
                             to={item.path}
+                            onClick={closeSidebar}
                             className={({ isActive }) =>
                                 `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
                                     isActive
@@ -77,7 +94,7 @@ export default function AppLayout() {
                     ))}
 
                     <button
-                        onClick={() => setIsUploadModalOpen(true)}
+                        onClick={() => { setIsUploadModalOpen(true); closeSidebar(); }}
                         className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white/60 hover:bg-white/5 hover:text-white/90 transition-all duration-150"
                     >
                         <span>{UPLOAD_ICON}</span>
@@ -103,17 +120,35 @@ export default function AppLayout() {
                 </div>
             </aside>
 
-            <main className="flex-1 overflow-y-auto flex flex-col">
-                <div className="flex-1">
-                    <Outlet context={{ openUploadModal: () => setIsUploadModalOpen(true), refreshTrigger }} />
-                </div>
-                <LegalFooter className="py-4 mt-auto border-t border-slate-200 bg-white/50" />
-            </main>
+            <div className="flex-1 flex flex-col overflow-hidden">
+                <header className="h-14 flex items-center justify-between px-4 bg-navy border-b border-white/10 md:hidden shrink-0">
+                    <button
+                        onClick={() => setSidebarOpen(true)}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+                        </svg>
+                    </button>
+                    <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-teal"></span>
+                        <span className="text-white font-bold text-sm tracking-wide">ClarityScan</span>
+                    </div>
+                    <div className="w-8" />
+                </header>
+
+                <main className="flex-1 overflow-y-auto flex flex-col">
+                    <div className="flex-1">
+                        <Outlet context={{ openUploadModal: () => setIsUploadModalOpen(true), refreshTrigger }} />
+                    </div>
+                    <LegalFooter className="py-4 mt-auto border-t border-slate-200 bg-white/50" />
+                </main>
+            </div>
 
             {isUploadModalOpen && (
-                <UploadModal 
-                    onClose={() => setIsUploadModalOpen(false)} 
-                    onUploadSuccess={() => setRefreshTrigger(prev => prev + 1)} 
+                <UploadModal
+                    onClose={() => setIsUploadModalOpen(false)}
+                    onUploadSuccess={() => setRefreshTrigger(prev => prev + 1)}
                 />
             )}
         </div>

@@ -164,7 +164,7 @@ export default function ReceiptsPage() {
     }
 
     return (
-        <div className="p-8 md:p-10 space-y-6">
+        <div className="p-4 md:p-10 space-y-6">
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-navy">Receipts</h1>
@@ -199,7 +199,7 @@ export default function ReceiptsPage() {
                     </button>
                     <button
                         onClick={() => exportToCSV(filtered)}
-                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 transition-colors duration-150"
+                        className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 transition-colors duration-150"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-4 h-4">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -211,15 +211,15 @@ export default function ReceiptsPage() {
                         type="date"
                         value={dateFrom}
                         onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-                        className="px-3 py-2 text-sm border border-slate-200 rounded-xl bg-white text-slate-700 focus:ring-2 focus:ring-teal outline-none transition-all"
+                        className="hidden sm:block px-3 py-2 text-sm border border-slate-200 rounded-xl bg-white text-slate-700 focus:ring-2 focus:ring-teal outline-none transition-all"
                         title="From date"
                     />
-                    <span className="text-slate-400 text-sm">→</span>
+                    <span className="hidden sm:block text-slate-400 text-sm">→</span>
                     <input
                         type="date"
                         value={dateTo}
                         onChange={e => { setDateTo(e.target.value); setPage(1); }}
-                        className="px-3 py-2 text-sm border border-slate-200 rounded-xl bg-white text-slate-700 focus:ring-2 focus:ring-teal outline-none transition-all"
+                        className="hidden sm:block px-3 py-2 text-sm border border-slate-200 rounded-xl bg-white text-slate-700 focus:ring-2 focus:ring-teal outline-none transition-all"
                         title="To date"
                     />
                 </div>
@@ -263,8 +263,8 @@ export default function ReceiptsPage() {
                         <thead>
                             <tr className="border-b border-slate-100">
                                 <th className="text-left px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wide">Merchant</th>
-                                <th className="text-left px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wide">Date</th>
-                                <th className="text-left px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wide">Category</th>
+                                <th className="hidden sm:table-cell text-left px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wide">Date</th>
+                                <th className="hidden md:table-cell text-left px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wide">Category</th>
                                 <th className="text-left px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wide">Status</th>
                                 <th className="text-right px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wide">Price</th>
                                 <th className="text-right px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wide">Action</th>
@@ -287,10 +287,10 @@ export default function ReceiptsPage() {
                                         <td className="px-6 py-4">
                                             <p className="text-sm font-semibold text-navy">{receipt.merchant_name || 'Processing...'}</p>
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="hidden sm:table-cell px-6 py-4">
                                             <p className="text-sm text-slate-400">{receipt.receipt_date || '-'}</p>
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="hidden md:table-cell px-6 py-4">
                                             <span className="flex items-center gap-2 text-sm text-slate-600">
                                                 <span>{CATEGORY_ICONS[receipt.category] || '📦'}</span>
                                                 {receipt.category}

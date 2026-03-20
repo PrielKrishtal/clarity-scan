@@ -142,16 +142,16 @@ export default function ReceiptDetailPage() {
     const fullImageUrl = form.image_url || null;
 
     return (
-        <div className="p-6 md:p-8 space-y-5 h-full flex flex-col">
-            <div className="flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-4">
+        <div className="p-4 md:p-8 space-y-5 h-full flex flex-col">
+            <div className="flex flex-wrap items-start justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-3 flex-wrap">
                     <button onClick={() => navigate('/receipts')} className="flex items-center gap-2 text-sm text-slate-500 hover:text-navy transition-colors">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                         Back to Receipts
                     </button>
-                    <div className="w-px h-4 bg-slate-200" />
+                    <div className="w-px h-4 bg-slate-200 hidden sm:block" />
                     <div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 flex-wrap">
                             <h1 className="text-lg font-bold text-navy">{form.merchant_name || 'Processing...'}</h1>
                             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_STYLES[form.status]}`}>
                                 {form.status.replace(/_/g, ' ')}
