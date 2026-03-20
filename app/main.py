@@ -43,3 +43,8 @@ app.include_router(dashboard.router)
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "message": "ClarityScan API is up and running!"}
+
+
+@app.get("/")
+async def root():
+    return {"message": "ClarityScan API is Live!", "documentation": "/docs"}
