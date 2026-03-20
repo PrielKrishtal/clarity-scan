@@ -4,12 +4,6 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libmagic1 \
-    libgl1 \
-    libglib2.0-0 \
-    libgomp1 \
-    libstdc++6 \
-    libgcc-s1 \
-    gcc \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

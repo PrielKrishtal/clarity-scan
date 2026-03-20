@@ -25,15 +25,38 @@ const STATUS_OPTIONS = ['All', 'APPROVED', 'REVIEW_NEEDED', 'PROCESSING', 'UPLOA
 const PAGE_SIZE = 8;
 
 const exportToCSV = (data) => {
-    const headers = ['Merchant', 'Date', 'Category', 'Price'];
-    const rows = data.map(r => [
-        `"${(r.merchant_name || '').replace(/"/g, '""')}"`,
-        `"${r.receipt_date || ''}"`,
-        `"${r.category || ''}"`,
-        `"$${parseFloat(r.total_amount || 0).toFixed(2)}"`
-    ]);
+    const headers = ['Merchant', 'Date', 'Category', 'Net Amount', 'Tax Amount', 'Price'];
+    
+    const rows = data.map(r => {
+        const total = parseFloat(r.total_amount || 0);
+        const tax = parseFloat(r.tax_amount || 0);
+        const net = total - tax;
+        
+        let shortDate = '';
+        if (r.receipt_date) {
+            const [year, month, day] = r.receipt_date.split('-');
+            shortDate = `${day}/${month}/${year.slice(2)}`;
+        }
+        
+        
+        const formatPrice = (amount) => {
+            return r.currency === 'USD' ? `$${amount.toFixed(2)}` : `${amount.toFixed(2)}₪`;
+        };
+        
+        
+        return [
+            `"${(r.merchant_name || '').replace(/"/g, '""')}"`,
+            `"${shortDate}"`,
+            `"${r.category || ''}"`,
+            `"${formatPrice(net)}"`,
+            `"${formatPrice(tax)}"`,
+            `"${formatPrice(total)}"`
+        ];
+    });
+    
     const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
-    const encoded = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+    const encoded = 'data:text/csv;charset=utf-8,%EF%BB%BF' + encodeURIComponent(csv);
+    
     const a = document.createElement('a');
     a.setAttribute('href', encoded);
     a.setAttribute('download', 'receipts.csv');
@@ -41,6 +64,7 @@ const exportToCSV = (data) => {
     a.click();
     document.body.removeChild(a);
 };
+
 
 export default function ReceiptsPage() {
     const navigate = useNavigate();
@@ -78,7 +102,7 @@ export default function ReceiptsPage() {
 
     const filtered = useMemo(() => {
         return receipts.filter(r => {
-            const matchSearch = r.merchant_name?.toLowerCase().includes(search.toLowerCase());
+            const matchSearch = !search || r.merchant_name?.toLowerCase().includes(search.toLowerCase());
             const matchStatus = statusFilter === 'All' || r.status === statusFilter;
             const matchFrom   = !dateFrom || r.receipt_date >= dateFrom;
             const matchTo     = !dateTo   || r.receipt_date <= dateTo;
@@ -278,7 +302,9 @@ export default function ReceiptsPage() {
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <p className="text-sm font-bold text-navy">${parseFloat(receipt.total_amount || 0).toFixed(2)}</p>
+                                            <p className="text-sm font-bold text-navy">
+                                                {receipt.currency === 'USD' ? '$' : ''}{parseFloat(receipt.total_amount || 0).toFixed(2)}{receipt.currency === 'ILS' ? ' ₪' : ''}
+                                            </p>
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <button

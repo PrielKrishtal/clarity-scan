@@ -2,20 +2,21 @@ import logging
 import os
 import re
 import tempfile
-
-os.environ["FLAGS_use_mkldnn"] = "0"  # disable oneDNN — prevents Windows crash, harmless on Linux/Render
-
 import cv2
 import numpy as np
-from paddleocr import PaddleOCR
+from google.cloud import vision
 from fastapi.concurrency import run_in_threadpool
-
 from app.crud import receipt as crud_receipt
 from app.db.database import AsyncSessionLocal
 from app.db.models import ReceiptStatus
 from app.schemas.receipt import ReceiptUpdate
 from app.core.storage import download_file
 from datetime import datetime, date, timezone
+from app.services.ocr_config import (
+    TOTAL_KEYWORDS, SUBTOTAL_KEYWORDS, IGNORE_WORDS_BASE, 
+    EXCLUDE_KEYWORDS, TOTAL_NEGATIVE_FILTERS, SUBTOTAL_BREAK_KEYWORDS,
+    TAX_KEYWORDS
+)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -23,21 +24,14 @@ logger.setLevel(logging.DEBUG)
 
 class ReceiptScanner:
     def __init__(self):
-        self.reader = None
-
-    def _get_reader(self):
-        """Internal helper to load the OCR only when needed"""
-        if self.reader is None:
-            logger.info("Initializing PaddleOCR for the first time...")
-            # Optimized settings for low-memory environments
-            self.reader = PaddleOCR(
-                use_angle_cls=False,  # Saves significant RAM
-                lang="en", 
-                use_mkldnn=False, 
-                show_log=False,
-                rec_batch_num=1
-            )
-        return self.reader
+        self.client = vision.ImageAnnotatorClient()
+        # Compiled patterns for optimal performance
+        self.total_pattern = re.compile("|".join(TOTAL_KEYWORDS), re.IGNORECASE)
+        self.subtotal_pattern = re.compile("|".join(SUBTOTAL_KEYWORDS), re.IGNORECASE)
+        self.exclude_pattern = re.compile("|".join(EXCLUDE_KEYWORDS), re.IGNORECASE)
+        self.total_negative_pattern = re.compile("|".join(TOTAL_NEGATIVE_FILTERS), re.IGNORECASE)
+        self.subtotal_break_pattern = re.compile("|".join(SUBTOTAL_BREAK_KEYWORDS), re.IGNORECASE)
+        self.tax_pattern = re.compile("|".join(TAX_KEYWORDS), re.IGNORECASE)
 
     def _order_points(self, corners_lst):
         pts = corners_lst.reshape((4, 2))
@@ -80,110 +74,105 @@ class ReceiptScanner:
             return float(cleaned.replace(",", "").replace(".", ""))
 
     def _extract_total_amount(self, text_list: list[str]) -> float | None:
-        price_pattern = r"[\d,]+\s*[.,]\s*\d{2}"
-
-        # expanded keywords + added "tax" to exclusion so "TOTAL TAX" lines don't match
-        total_keywords = r"total|amount\s*due|balance\s*due|grand\s*total|total\s*due"
+        price_pattern = r"[\d,]+\s*[.,]\s*\d{1,2}(?!\s*%)"
 
         for i, line in enumerate(text_list):
-            if re.search(total_keywords, line, re.IGNORECASE) and not re.search(
-                r"sub|saving|item|discount|tax", line, re.IGNORECASE
-            ):
-                # price sometimes appears on the next line, so we look ahead a few rows
+            if self.total_pattern.search(line) and not self.total_negative_pattern.search(line):
                 for j in range(i, min(i + 6, len(text_list))):
                     matches = re.findall(price_pattern, text_list[j])
                     if matches:
                         return self._clean_price_string(matches[-1])
 
-        # fallback: total is almost always the last price on the receipt —
-        # scan backwards but skip tax/fee/change/cash lines
         for line in reversed(text_list):
-            if re.search(r"tax|fee|change|cash", line, re.IGNORECASE):
+            if self.exclude_pattern.search(line):
                 continue
             matches = re.findall(price_pattern, line)
             if matches:
                 candidate = self._clean_price_string(matches[-1])
                 if candidate > 0:
                     return candidate
-
         return None
 
     def _extract_subtotal_amount(self, text_list: list[str]) -> float | None:
-        price_pattern = r"[\d,]+\s*[.,]\s*\d{2}"
+        price_pattern = r"[\d,]+\s*[.,]\s*\d{1,2}(?!\s*%)"
 
         for i, line in enumerate(text_list):
-            if re.search(r"sub\s*tota", line, re.IGNORECASE):
+            if self.subtotal_pattern.search(line):
                 matches = re.findall(price_pattern, line)
                 if matches:
                     return self._clean_price_string(matches[-1])
 
                 for j in range(i + 1, min(i + 4, len(text_list))):
                     next_line = text_list[j]
-                    if re.search(r"tax|tota", next_line, re.IGNORECASE):
+                    if self.subtotal_break_pattern.search(next_line):
                         break
                     matches = re.findall(price_pattern, next_line)
                     if matches:
                         return self._clean_price_string(matches[-1])
         return None
+    
+
 
     def _extract_company_name(self, text_list: list[str]) -> str:
-        ignore_words = [
-            "receipt", "win", "survey", "chance", "welcome", "customer",
-            "id", "save", "money", "doers", "done", "better", "expect", "less", "more",
-            "street", "avenue", "ave", "road", "rd", "blvd", "drive", "dr",
-            "lane", "ln", "floor", "suite", "ste", "thank", "please", "visit", "open", "daily",
-            "store", "manager", "cashier", "operator", "server",
-        ]
-
+        ignore_words = IGNORE_WORDS_BASE
         for line in text_list[:10]:
             clean_line = line.strip()
-
-            if len(clean_line) < 4:
+            
+            # Aggressive validation: length > 3, max 2 digits, must contain letters (Hebrew or English)
+            if len(clean_line) < 4 or sum(c.isdigit() for c in clean_line) > 2:
                 continue
-
-            # phone numbers, zip codes, store IDs — skip anything number-heavy
-            digits_count = sum(c.isdigit() for c in clean_line)
-            if digits_count > 2:
+            if not re.search(r'[a-zA-Zא-ת]{2,}', clean_line):
                 continue
-
-            # skip lines that look like addresses (state abbreviation + zip code)
-            if re.search(r'\b[A-Z]{2}\s+\d{5}\b', clean_line):
+            if re.search(r'www\.|\.com|\.co', clean_line, re.IGNORECASE):
                 continue
-
-            # skip URLs
-            if re.search(r'www\.|\.com|\.co|\.org|\.net', clean_line, re.IGNORECASE):
+            if any(word in clean_line.lower() for word in ignore_words):
                 continue
-
-            line_lower = clean_line.lower()
-            if any(word in line_lower for word in ignore_words):
-                continue
-
             return clean_line
-
         return "Unknown Company"
 
     def _extract_date(self, text_list: list[str]) -> date | None:
         date_pattern = r"\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b"
-
-        formats_to_try = [
-            "%m/%d/%y",   # 11/13/17
-            "%m/%d/%Y",   # 11/13/2017
-            "%d/%m/%Y",   # 13/11/2017
-            "%d-%m-%Y",   # 13-11-2017
-            "%Y-%m-%d",   # 2017-11-13
-            "%Y.%m.%d",   # 2017.11.13
-        ]
-
+        formats = ["%d/%m/%y", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%y", "%d.%m.%Y", "%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d"]
+        
         for line in text_list:
             matches = re.findall(date_pattern, line)
             if matches:
-                raw = matches[0]
-                for fmt in formats_to_try:
+                for fmt in formats:
                     try:
-                        return datetime.strptime(raw, fmt).date()
+                        return datetime.strptime(matches[0], fmt).date()
                     except ValueError:
                         continue
         return None
+
+    def _extract_tax_amount(self, text_list: list[str]) -> float | None:
+        price_pattern = r"[\d,]+\s*[.,]\s*\d{1,2}(?!\s*%)"
+        for line in text_list:
+            # Look for explicit VAT/Tax labels defined in config
+            if self.tax_pattern.search(line):
+                matches = re.findall(price_pattern, line)
+                if matches:
+                    return self._clean_price_string(matches[-1])
+        return None
+
+
+    def _extract_currency(self, text_list: list[str]) -> str:
+        from app.services.ocr_config import CURRENCY_MAPPING
+        
+        full_text = " ".join(text_list).lower()
+        
+        # Check for ILS keywords
+        ils_pattern = re.compile("|".join(CURRENCY_MAPPING["ILS"]), re.IGNORECASE)
+        if ils_pattern.search(full_text):
+            return "ILS"
+            
+        # Check for USD keywords
+        usd_pattern = re.compile("|".join(CURRENCY_MAPPING["USD"]), re.IGNORECASE)
+        if usd_pattern.search(full_text):
+            return "USD"
+            
+        # Fallback default currency
+        return "ILS"
+    
 
     def scan(self, image_filename: str) -> dict:
         """
@@ -248,37 +237,44 @@ class ReceiptScanner:
                 img, transform_matrix, (int(width), int(height))
             )
 
-            aligned_image = aligned_image.astype(np.uint8)
-            ocr_engine = self._get_reader()
-            result = ocr_engine.ocr(aligned_image, cls=False)
+            _, encoded_image = cv2.imencode('.jpg', aligned_image)
+            image_content = encoded_image.tobytes()
+            vision_image = vision.Image(content=image_content)
 
-            # drop anything the OCR model wasn't confident about
-            clean_text_list = []
-            if result and result[0]:
-                for line in result[0]:
-                    text = line[1][0]
-                    confidence = line[1][1]
-                    if confidence > 0.3:
-                        clean_text_list.append(text)
+            response = self.client.document_text_detection(image=vision_image)
+
+            full_text = response.full_text_annotation.text
+            clean_text_list = [line.strip() for line in full_text.split('\n') if line.strip()]
 
             final_total = self._extract_total_amount(clean_text_list)
             subtotal = self._extract_subtotal_amount(clean_text_list)
             company = self._extract_company_name(clean_text_list)
             receipt_date = self._extract_date(clean_text_list)
-            if final_total and subtotal:
-                calculated_tax = round(final_total - subtotal, 2)
+            detected_currency = self._extract_currency(clean_text_list)
+            extracted_tax = self._extract_tax_amount(clean_text_list)
+            
+            if extracted_tax is not None:
+                final_tax = extracted_tax
+            elif final_total and subtotal and final_total >= subtotal: 
+                final_tax = round(final_total - subtotal, 2)
             else:
-                calculated_tax = None
+                final_tax = None
+
+            # VAT Sanity Check (Moved to the end): In Israel, VAT is currently 18%. 
+            # Reject the FINAL calculated tax if it represents an impossible percentage (e.g., > 35%).
+            if final_tax is not None and final_total and final_total > 0:
+                if final_tax >= final_total or (final_tax / final_total) > 0.35:
+                    final_tax = None
 
             return {
                 "merchant_name": company,
                 "total_amount": final_total,
-                "tax_amount": calculated_tax,
+                "tax_amount": final_tax,
+                "currency": detected_currency,
                 "receipt_date": receipt_date,
             }
 
         finally:
-            # Always clean up the temp file even if OCR fails
             os.unlink(tmp_path)
 
 

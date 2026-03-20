@@ -11,9 +11,10 @@ from fastapi import (
     Query,
     UploadFile,
     status,
+    Request
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from app.core.limiter import limiter
 from app.api.auth import get_current_user
 from app.crud import receipt as crud_receipt
 from app.db.database import get_db
@@ -48,7 +49,9 @@ async def create_receipt_manual(
     response_model=schemas.ReceiptResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
+@limiter.limit("10/day") 
 async def upload_receipt_image(
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),

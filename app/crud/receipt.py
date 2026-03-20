@@ -35,7 +35,7 @@ async def create_receipt_from_upload(db: AsyncSession, file_path: str, user_id: 
 
 # 2. READ ALL
 async def get_user_receipts(
-    db: AsyncSession, user_id: int, skip: int = 0, limit: int = 20
+    db: AsyncSession, user_id: int, skip: int = 0, limit: int = 5000
 ):
     result = await db.execute(
         select(Receipt)

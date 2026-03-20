@@ -36,10 +36,12 @@ async def override_get_db():
 app.dependency_overrides[get_db] = override_get_db
 
 
-# --- Prevent the real OCR pipeline from running during API tests ---
+# --- Prevent the real OCR pipeline and Supabase storage from running during API tests ---
 @pytest.fixture(autouse=True)
 def mock_ai_pipeline():
-    with patch("app.api.receipts.process_receipt_task", new_callable=AsyncMock):
+    with patch("app.api.receipts.process_receipt_task", new_callable=AsyncMock), \
+         patch("app.api.receipts.upload_file", return_value="test-file.jpg"), \
+         patch("app.api.receipts.get_signed_url", return_value="https://fake-url.com/test.jpg"):
         yield
 
 

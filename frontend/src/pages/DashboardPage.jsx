@@ -7,7 +7,8 @@ import {
 
 import { useAuth } from '../context/AuthContext';
 import { updateBudget } from '../api/users';
-import { getReceipts } from '../api/receipts';
+// IMPORTANT: Update your API imports to include the new summary endpoint
+import { getDashboardSummary } from '../api/receipts'; 
 import { FINANCIAL_TIPS } from '../data/financialTips';
 
 const PIE_COLORS = ['#0F2D4A', '#2A9D8F', '#F59E0B', '#EF4444', '#6366F1'];
@@ -17,12 +18,12 @@ const CATEGORY_ICONS = { Food: '🍔', Transport: '🚗', Bills: '💡', Shoppin
 const getCurrentMonth = () => new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 const getTodayString = () => new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-const CustomTooltip = ({ active, payload, label }) => {
+const CustomTooltip = ({ active, payload, label, currSymbol }) => {
     if (active && payload && payload.length) {
         return (
             <div className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 shadow-lg">
                 <p className="text-xs text-slate-400 mb-0.5">{label}</p>
-                <p className="text-sm font-bold text-navy">${payload[0].value.toLocaleString('en-US')}</p>
+                <p className="text-sm font-bold text-navy">{currSymbol}{payload[0].value.toLocaleString('en-US')}</p>
             </div>
         );
     }
@@ -46,7 +47,7 @@ const TipCard = () => {
     );
 };
 
-const BudgetSetupCard = ({ onSave }) => {
+const BudgetSetupCard = ({ onSave, currSymbol }) => {
     const [selected, setSelected] = useState(null);
     const [custom, setCustom] = useState('');
     const effectiveValue = custom !== '' ? custom : selected;
@@ -82,11 +83,11 @@ const BudgetSetupCard = ({ onSave }) => {
                                 : 'border-slate-200 text-slate-600 hover:border-teal/40'
                         }`}
                     >
-                        ${p.toLocaleString()}
+                        {currSymbol}{p.toLocaleString()}
                     </button>
                 ))}
                 <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">{currSymbol}</span>
                     <input
                         type="number"
                         placeholder="Custom"
@@ -108,7 +109,7 @@ const BudgetSetupCard = ({ onSave }) => {
     );
 };
 
-const BudgetBarRow = ({ spent, limit, onEdit }) => {
+const BudgetBarRow = ({ spent, limit, onEdit, currSymbol }) => {
     const pct = Math.min((spent / limit) * 100, 100);
     const barColor = pct < 70 ? '#2A9D8F' : pct < 90 ? '#F59E0B' : '#EF4444';
     return (
@@ -118,8 +119,8 @@ const BudgetBarRow = ({ spent, limit, onEdit }) => {
                     <div className="flex justify-between items-center mb-1.5">
                         <span className="text-xs text-slate-400 font-medium">Budget for {getCurrentMonth()}</span>
                         <span className="text-xs font-semibold text-navy">
-                            ${spent.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                            <span className="text-slate-400 font-normal"> / ${limit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                            {currSymbol}{spent.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            <span className="text-slate-400 font-normal"> / {currSymbol}{limit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                         </span>
                     </div>
                     <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -144,11 +145,17 @@ const BudgetBarRow = ({ spent, limit, onEdit }) => {
 export default function DashboardPage() {
     const { user } = useAuth();
     const { refreshTrigger } = useOutletContext() || {};
-    const [receipts, setReceipts] = useState([]);
+    
+
+    const [summaryData, setSummaryData] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [currency, setCurrency] = useState('ILS');
+    const [ilsMonthlySpent, setIlsMonthlySpent] = useState(0);
 
     const [budgetLimit, setBudgetLimit] = useState(user?.monthly_budget ? parseFloat(user.monthly_budget) : null);
     const [budgetSaved, setBudgetSaved] = useState(!!user?.monthly_budget);
+
+    const currSymbol = currency === 'ILS' ? '₪' : '$';
 
     const handleBudgetSave = async (val) => {
         await updateBudget(val);
@@ -165,88 +172,80 @@ export default function DashboardPage() {
     
     useEffect(() => {
         const loadData = async () => {
+            setLoading(true);
             try {
-                const data = await getReceipts();
-                setReceipts(data);
+                const data = await getDashboardSummary(currency);
+                setSummaryData(data);
+                // Always keep ILS spent for accurate budget % regardless of display currency
+                if (currency !== 'ILS') {
+                    const ilsData = await getDashboardSummary('ILS');
+                    setIlsMonthlySpent(ilsData?.this_month_spent || 0);
+                } else {
+                    setIlsMonthlySpent(data?.this_month_spent || 0);
+                }
             } catch (error) {
-                console.error('Failed to load receipts', error);
+                console.error('Failed to load dashboard summary', error);
             } finally {
                 setLoading(false);
             }
         };
         loadData();
-    }, [refreshTrigger]);
+    }, [refreshTrigger, currency]);
 
-    const now = new Date();
-    const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const prevMonthPrefix = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
-    const prevMonthName = prevMonthDate.toLocaleDateString('en-US', { month: 'short' });
+    // Data Mapping from Backend Schema
+    const monthlySpent = summaryData?.this_month_spent || 0;
+    // Derive exchange rate from the two fetches to convert budget limit into display currency
+    const exchangeRate = (currency !== 'ILS' && ilsMonthlySpent > 0 && monthlySpent > 0)
+        ? monthlySpent / ilsMonthlySpent
+        : 1;
+    const displayBudgetLimit = budgetLimit ? parseFloat((budgetLimit * exchangeRate).toFixed(2)) : null;
+    const lastMonthSpent = summaryData?.last_month_spent || 0;
+    const totalTracked = summaryData?.total_tracked || 0;
+    const totalReceipts = summaryData?.total_receipts || 0;
+    const pendingReview = summaryData?.pending_review_count || 0;
+    const approvedThisMonth = summaryData?.approved_this_month_count || 0;
+    const avgReceipt = summaryData?.avg_receipt_amount || 0;
+    
+    // Recharts expects an array sorted by value for the Pie chart to look best
+    const categoryData = [...(summaryData?.category_breakdown || [])].sort((a, b) => b.value - a.value);
+    const sixMonthsAgo = new Date(); sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    const sixMonthsAgoPrefix = sixMonthsAgo.toISOString().slice(0, 7);
+    const monthlyChartData = (summaryData?.monthly_chart_data || []).filter(m => m.month >= sixMonthsAgoPrefix);
+    
+    const biggestReceipt = summaryData?.biggest_receipt_merchant ? {
+        merchant_name: summaryData.biggest_receipt_merchant,
+        total_amount: summaryData.biggest_receipt_amount,
+        receipt_date: summaryData.biggest_receipt_date
+    } : null;
 
-    const approvedReceipts = receipts.filter(r => r.status === 'APPROVED');
-    const approvedThisMonth = approvedReceipts.filter(r => r.receipt_date?.startsWith(currentMonthPrefix));
-    const approvedLastMonth = approvedReceipts.filter(r => r.receipt_date?.startsWith(prevMonthPrefix));
-
-    const monthlySpent = approvedThisMonth.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
-    const lastMonthSpent = approvedLastMonth.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
-    const totalTracked = approvedReceipts.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
-
-    const biggestReceipt = receipts.length > 0
-        ? [...receipts].sort((a, b) => parseFloat(b.total_amount || 0) - parseFloat(a.total_amount || 0))[0]
-        : null;
-
-    const avgReceipt = approvedThisMonth.length ? monthlySpent / approvedThisMonth.length : 0;
-
+    // Client-side MoM (Month over Month) calculation based on server-provided sums
     const momDiff = monthlySpent - lastMonthSpent;
     const momPct = lastMonthSpent > 0 ? Math.abs((momDiff / lastMonthSpent) * 100).toFixed(0) : null;
     const momDown = momDiff < 0;
 
-    const categoryData = Object.values(
-        approvedThisMonth.reduce((acc, r) => {
-            const cat = r.category || 'Other';
-            acc[cat] = acc[cat] || { name: cat, value: 0 };
-            acc[cat].value += parseFloat(r.total_amount || 0);
-            return acc;
-        }, {})
-    ).sort((a, b) => b.value - a.value);
-
+    const prevMonthName = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toLocaleDateString('en-US', { month: 'short' });
     const topCategory = categoryData.length > 0 ? categoryData[0] : null;
     const topCategoryPct = topCategory && budgetLimit
         ? ((topCategory.value / budgetLimit) * 100).toFixed(0)
         : '—';
-
-    const monthlyChartData = (() => {
-        const months = [];
-        for (let i = 5; i >= 0; i--) {
-            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-            const prefix = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-            const label = d.toLocaleDateString('en-US', { month: 'short' });
-            const total = approvedReceipts
-                .filter(r => r.receipt_date?.startsWith(prefix))
-                .reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
-            months.push({ month: label, total: Math.round(total) });
-        }
-        return months;
-    })();
-
     const hasChartData = monthlyChartData.some(m => m.total > 0);
 
     const summaryCards = [
         {
             label: 'Total Receipts',
-            value: loading ? '—' : receipts.length.toString(),
+            value: loading ? '—' : totalReceipts.toString(),
             sub: 'All time',
             icon: <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>,
         },
         {
             label: 'This Month',
-            value: loading ? '—' : `$${monthlySpent.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+            value: loading ? '—' : `${currSymbol}${monthlySpent.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
             sub: getCurrentMonth(),
             icon: <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" /></svg>,
         },
         {
             label: 'Pending Review',
-            value: loading ? '—' : receipts.filter(r => r.status === 'REVIEW_NEEDED').length.toString(),
+            value: loading ? '—' : pendingReview.toString(),
             sub: 'Needs attention',
             icon: <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" /></svg>,
         },
@@ -260,11 +259,29 @@ export default function DashboardPage() {
                     <h1 className="text-2xl font-bold text-navy">Overview</h1>
                     <p className="text-sm text-slate-400 mt-0.5">{getTodayString()}</p>
                 </div>
-                <div className="text-right hidden sm:block">
-                    <p className="text-xs text-slate-400 mb-0.5">Total tracked</p>
-                    <p className="text-xl font-bold text-navy">
-                        {loading ? '—' : `$${totalTracked.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
-                    </p>
+                <div className="hidden sm:flex items-center gap-6">
+                    {/* Currency Toggle */}
+                    <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
+                        <button 
+                            onClick={() => setCurrency('ILS')} 
+                            className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all ${currency === 'ILS' ? 'bg-white shadow text-navy' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            ILS (₪)
+                        </button>
+                        <button 
+                            onClick={() => setCurrency('USD')} 
+                            className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all ${currency === 'USD' ? 'bg-white shadow text-navy' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            USD ($)
+                        </button>
+                    </div>
+                    {/* Total Tracked */}
+                    <div className="text-right">
+                        <p className="text-xs text-slate-400 mb-0.5">Total tracked</p>
+                        <p className="text-xl font-bold text-navy">
+                            {loading ? '—' : `${currSymbol}${totalTracked.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
+                        </p>
+                    </div>
                 </div>
             </div>
 
@@ -285,9 +302,9 @@ export default function DashboardPage() {
             </div>
 
             {budgetSaved && budgetLimit ? (
-                <BudgetBarRow spent={monthlySpent} limit={budgetLimit} onEdit={() => setBudgetSaved(false)} />
+                <BudgetBarRow spent={monthlySpent} limit={displayBudgetLimit} onEdit={() => setBudgetSaved(false)} currSymbol={currSymbol} />
             ) : (
-                <BudgetSetupCard onSave={handleBudgetSave} />
+                <BudgetSetupCard onSave={handleBudgetSave} currSymbol={'₪'} />
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -299,8 +316,8 @@ export default function DashboardPage() {
                             <BarChart data={monthlyChartData} barSize={26}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                                 <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} />
-                                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(42,157,143,0.06)' }} />
+                                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => `${currSymbol}${v}`} />
+                                <Tooltip content={<CustomTooltip currSymbol={currSymbol} />} cursor={{ fill: 'rgba(42,157,143,0.06)' }} />
                                 <Bar dataKey="total" fill="#0F2D4A" radius={[4, 4, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
@@ -317,13 +334,13 @@ export default function DashboardPage() {
                     {categoryData.length > 0 ? (
                         <ResponsiveContainer width="100%" height={220}>
                             <PieChart>
-                                <Pie data={categoryData} cx="50%" cy="42%" innerRadius={52} outerRadius={80} paddingAngle={3} dataKey="value">
+                                <Pie data={categoryData} cx="50%" cy="42%" innerRadius={52} outerRadius={80} paddingAngle={categoryData.length > 1 ? 3 : 0} dataKey="value" stroke="none">
                                     {categoryData.map((_, index) => (
                                         <Cell key={index} fill={PIE_COLORS[index % PIE_COLORS.length]} />
                                     ))}
                                 </Pie>
                                 <Legend iconType="circle" iconSize={7} wrapperStyle={{ fontSize: '11px', color: '#64748b' }} />
-                                <Tooltip formatter={(value) => [`$${value.toLocaleString('en-US')}`, '']} />
+                                <Tooltip formatter={(value) => `${currSymbol}${value.toLocaleString()}`} />
                             </PieChart>
                         </ResponsiveContainer>
                     ) : (
@@ -345,7 +362,7 @@ export default function DashboardPage() {
                             {topCategory ? (
                                 <>
                                     <p className="text-sm font-bold text-navy mt-0.5">{topCategory.name}</p>
-                                    <p className="text-xs text-slate-400">${topCategory.value.toLocaleString('en-US', { minimumFractionDigits: 2 })} · {topCategoryPct}% of budget</p>
+                                    <p className="text-xs text-slate-400">{currSymbol}{topCategory.value.toLocaleString('en-US', { minimumFractionDigits: 2 })} · {topCategoryPct}% of budget</p>
                                 </>
                             ) : (
                                 <p className="text-xs text-slate-300 mt-1">Upload receipts for a full breakdown</p>
@@ -365,7 +382,7 @@ export default function DashboardPage() {
                             {biggestReceipt ? (
                                 <>
                                     <p className="text-sm font-bold text-navy mt-0.5">{biggestReceipt.merchant_name}</p>
-                                    <p className="text-xs text-slate-400">${parseFloat(biggestReceipt.total_amount).toFixed(2)} · {biggestReceipt.receipt_date}</p>
+                                    <p className="text-xs text-slate-400">{currSymbol}{parseFloat(biggestReceipt.total_amount).toFixed(2)} · {biggestReceipt.receipt_date}</p>
                                 </>
                             ) : (
                                 <p className="text-xs text-slate-300 mt-1">Your largest purchase will show here</p>
@@ -382,10 +399,10 @@ export default function DashboardPage() {
                         </div>
                         <div>
                             <p className="text-xs text-slate-400 font-medium">Avg. Receipt</p>
-                            {approvedThisMonth.length > 0 ? (
+                            {approvedThisMonth > 0 ? (
                                 <>
-                                    <p className="text-sm font-bold text-navy mt-0.5">${avgReceipt.toFixed(2)}</p>
-                                    <p className="text-xs text-slate-400">Across {approvedThisMonth.length} approved</p>
+                                    <p className="text-sm font-bold text-navy mt-0.5">{currSymbol}{avgReceipt.toFixed(2)}</p>
+                                    <p className="text-xs text-slate-400">Across {approvedThisMonth} approved</p>
                                 </>
                             ) : (
                                 <p className="text-xs text-slate-300 mt-1">Approve receipts to see your average</p>
@@ -411,7 +428,7 @@ export default function DashboardPage() {
                                         {momDown ? '↓' : '↑'} {momPct}%
                                     </p>
                                     <p className="text-xs text-slate-400">
-                                        ${Math.abs(momDiff).toFixed(2)} {momDown ? 'less' : 'more'} than {prevMonthName}
+                                        {currSymbol}{Math.abs(momDiff).toFixed(2)} {momDown ? 'less' : 'more'} than {prevMonthName}
                                     </p>
                                 </>
                             ) : (

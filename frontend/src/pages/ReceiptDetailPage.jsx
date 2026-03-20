@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { getReceiptById, updateReceipt, deleteReceipt } from '../api/receipts';
 import { usePageData } from '../hooks/usePageData';
 
-
 const CATEGORIES = [
     { id: 'Food', label: 'Food' },
     { id: 'Transport', label: 'Transport' },
@@ -29,13 +28,13 @@ const FieldRow = ({ label, children }) => (
 );
 
 const ReadOnlyValue = ({ value, prefix }) => (
-    <div className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-navy">
-        {prefix && <span className="text-slate-400 mr-1">{prefix}</span>}
+    <div className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-navy flex items-center min-h-[42px]">
+        {prefix && <span className="text-slate-400 mr-1.5 font-bold">{prefix}</span>}
         {value || '-'}
     </div>
 );
 
-const inputClass = "w-full px-4 py-2 text-sm border border-slate-200 rounded-xl bg-white text-navy focus:ring-2 focus:ring-teal outline-none transition-all";
+const inputClass = "w-full px-4 py-2.5 text-sm border border-slate-200 rounded-xl bg-white text-navy focus:ring-2 focus:ring-teal outline-none transition-all";
 
 export default function ReceiptDetailPage() {
     const navigate = useNavigate();
@@ -99,7 +98,8 @@ export default function ReceiptDetailPage() {
                 receipt_date: form.receipt_date,
                 total_amount: parseFloat(form.total_amount),
                 tax_amount: parseFloat(form.tax_amount || 0),
-                category: form.category
+                category: form.category,
+                currency: form.currency || 'ILS'
             };
             await updateReceipt(id, payload);
             navigate('/receipts');
@@ -118,7 +118,8 @@ export default function ReceiptDetailPage() {
                 receipt_date: form.receipt_date,
                 total_amount: parseFloat(form.total_amount),
                 tax_amount: parseFloat(form.tax_amount || 0),
-                category: form.category
+                category: form.category,
+                currency: form.currency || 'ILS'
             };
             const updated = await updateReceipt(id, payload);
             setForm(updated);
@@ -214,9 +215,38 @@ export default function ReceiptDetailPage() {
                     </div>
 
                     <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-                        <FieldRow label="Merchant Name">
-                            {editable ? <input className={inputClass} value={form.merchant_name || ''} onChange={(e) => handleChange('merchant_name', e.target.value)} /> : <ReadOnlyValue value={form.merchant_name} />}
-                        </FieldRow>
+                        
+                        <div className="grid grid-cols-3 gap-3">
+                            <div className="col-span-2">
+                                <FieldRow label="Merchant Name">
+                                    {editable ? <input className={inputClass} value={form.merchant_name || ''} onChange={(e) => handleChange('merchant_name', e.target.value)} /> : <ReadOnlyValue value={form.merchant_name} />}
+                                </FieldRow>
+                            </div>
+                            <div className="col-span-1">
+                                <FieldRow label="Currency">
+                                    {editable ? (
+                                        <div className="flex bg-slate-100 border border-slate-100 rounded-xl p-1 h-[42px]">
+                                            {['ILS', 'USD'].map(curr => (
+                                                <button
+                                                    key={curr}
+                                                    type="button"
+                                                    onClick={() => handleChange('currency', curr)}
+                                                    className={`flex-1 flex items-center justify-center text-sm font-extrabold rounded-lg transition-colors ${
+                                                        (form.currency || 'ILS') === curr 
+                                                            ? 'bg-white text-teal shadow-sm' 
+                                                            : 'text-slate-400 hover:bg-slate-200/50 hover:text-slate-600'
+                                                    }`}
+                                                >
+                                                    {curr === 'USD' ? '$' : '₪'}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <ReadOnlyValue value={(form.currency || 'ILS') === 'USD' ? 'USD ($)' : 'ILS (₪)'} />
+                                    )}
+                                </FieldRow>
+                            </div>
+                        </div>
 
                         <div className="grid grid-cols-2 gap-3">
                             <FieldRow label="Date">
@@ -234,21 +264,39 @@ export default function ReceiptDetailPage() {
                         <div className="grid grid-cols-2 gap-3">
                             <FieldRow label="Total Price">
                                 {editable ? (
-                                    <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
-                                    <input type="number" className={`${inputClass} pl-6`} value={form.total_amount || ''} onChange={(e) => handleChange('total_amount', e.target.value)} /></div>
-                                ) : <ReadOnlyValue value={parseFloat(form.total_amount || 0).toFixed(2)} prefix="$" />}
+                                    <div className="relative">
+                                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-extrabold">
+                                            {form.currency === 'USD' ? '$' : '₪'}
+                                        </span>
+                                        <input type="number" className={`${inputClass} pl-8`} value={form.total_amount || ''} onChange={(e) => handleChange('total_amount', e.target.value)} />
+                                    </div>
+                                ) : <ReadOnlyValue value={parseFloat(form.total_amount || 0).toFixed(2)} prefix={form.currency === 'USD' ? '$' : '₪'} />}
                             </FieldRow>
                             <FieldRow label="Tax Amount">
                                 {editable ? (
-                                    <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
-                                    <input type="number" className={`${inputClass} pl-6`} value={form.tax_amount || ''} onChange={(e) => handleChange('tax_amount', e.target.value)} /></div>
-                                ) : <ReadOnlyValue value={parseFloat(form.tax_amount || 0).toFixed(2)} prefix="$" />}
+                                    <div className="relative">
+                                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-extrabold">
+                                            {form.currency === 'USD' ? '$' : '₪'}
+                                        </span>
+                                        <input type="number" className={`${inputClass} pl-8`} value={form.tax_amount || ''} onChange={(e) => handleChange('tax_amount', e.target.value)} />
+                                    </div>
+                                ) : <ReadOnlyValue value={parseFloat(form.tax_amount || 0).toFixed(2)} prefix={form.currency === 'USD' ? '$' : '₪'} />}
                             </FieldRow>
                         </div>
 
                         <div className="pt-3 border-t border-slate-100 space-y-2">
-                            <div className="flex justify-between text-sm"><span className="text-slate-400">Net Amount</span><span className="font-bold text-navy">${(parseFloat(form.total_amount || 0) - parseFloat(form.tax_amount || 0)).toFixed(2)}</span></div>
-                            <div className="flex justify-between items-center"><span className="text-xs text-slate-400 font-semibold uppercase">Total incl. Tax</span><span className="text-xl font-bold text-navy">${parseFloat(form.total_amount || 0).toFixed(2)}</span></div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-slate-400">Net Amount</span>
+                                <span className="font-bold text-navy">
+                                    {form.currency === 'USD' ? '$' : '₪'} {(parseFloat(form.total_amount || 0) - parseFloat(form.tax_amount || 0)).toFixed(2)}
+                                </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-xs text-slate-400 font-semibold uppercase">Total incl. Tax</span>
+                                <span className="text-xl font-bold text-navy">
+                                    {form.currency === 'USD' ? '$' : '₪'} {parseFloat(form.total_amount || 0).toFixed(2)}
+                                </span>
+                            </div>
                         </div>
                     </div>
 

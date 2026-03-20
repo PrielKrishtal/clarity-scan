@@ -24,6 +24,11 @@ class ReceiptCategory(str, enum.Enum):
     HEALTH = "Health"  
     OTHER = "Other"
 
+class CurrencyType(str, enum.Enum):
+    ILS = "ILS"
+    USD = "USD"
+
+
 class Receipt(Base):
     __tablename__ = "receipts"
     id: Mapped[str] = mapped_column(
@@ -34,6 +39,9 @@ class Receipt(Base):
     tax_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
     total_amount: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(10, 2), nullable=True
+    )
+    currency: Mapped[CurrencyType] = mapped_column(
+        Enum(CurrencyType), default=CurrencyType.ILS, server_default="'ILS'", nullable=False
     )
     category: Mapped[ReceiptCategory] = mapped_column(
         Enum(ReceiptCategory), default=ReceiptCategory.OTHER, nullable=False

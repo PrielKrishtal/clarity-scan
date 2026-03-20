@@ -37,3 +37,10 @@ export const createManualReceipt = async (data) => {
     const response = await client.post('/receipts/', data);
     return response.data;
 };
+
+export const getDashboardSummary = async (currency = 'ILS') => {
+    const response = await client.get('/dashboard/summary', {
+        params: { currency }
+    });
+    return response.data;
+};

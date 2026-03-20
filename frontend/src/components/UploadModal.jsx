@@ -37,8 +37,13 @@ const ImageUploadTab = ({ onClose, onUploadSuccess }) => {
             }, 2000);
         } catch (err) {
             setStatus('idle');
-            const errorMessage = err.response?.data?.detail || "Upload failed. Please check your connection.";
-            setError(errorMessage);
+            // Check if it's a Rate Limit error (429)
+            if (err.response?.status === 429) {
+                setError("Demo limit reached (10/day). Please enter manually.");
+            } else {
+                const errorMessage = err.response?.data?.detail || "Upload failed. Please check your connection.";
+                setError(errorMessage);
+            }
         }
     };
 
@@ -108,7 +113,7 @@ const ImageUploadTab = ({ onClose, onUploadSuccess }) => {
 
 const ManualEntryTab = ({ onClose, onUploadSuccess }) => {
     const [status, setStatus] = useState('idle');
-    const [form, setForm] = useState({ merchant_name: '', receipt_date: '', category: 'Other', total_amount: '', tax_amount: '' });
+    const [form, setForm] = useState({ merchant_name: '', receipt_date: '', category: 'Other', total_amount: '', tax_amount: '', currency: 'ILS' });
 
     const handleChange = (field, val) => {
         if ((field === 'total_amount' || field === 'tax_amount') && val < 0) return;
@@ -121,7 +126,8 @@ const ManualEntryTab = ({ onClose, onUploadSuccess }) => {
             await createManualReceipt({ 
                 ...form, 
                 total_amount: parseFloat(form.total_amount), 
-                tax_amount: parseFloat(form.tax_amount || 0) 
+                tax_amount: parseFloat(form.tax_amount || 0),
+                currency: form.currency
             });
             setStatus('success');
             setTimeout(() => {
@@ -153,21 +159,66 @@ const ManualEntryTab = ({ onClose, onUploadSuccess }) => {
     return (
         <div className="space-y-4">
             <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-400 uppercase">Merchant Name</label>
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Merchant Name</label>
                 <input className={inputClass} placeholder="e.g. Superpharm" value={form.merchant_name} onChange={(e) => handleChange('merchant_name', e.target.value)} disabled={status === 'loading'} />
             </div>
+            
+            <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Date</label>
+                <input type="date" className={inputClass} value={form.receipt_date} onChange={(e) => handleChange('receipt_date', e.target.value)} disabled={status === 'loading'} />
+            </div>
+            
             <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-400 uppercase">Date</label>
-                    <input type="date" className={inputClass} value={form.receipt_date} onChange={(e) => handleChange('receipt_date', e.target.value)} disabled={status === 'loading'} />
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Price</label>
+                    <div className="flex border border-slate-200 rounded-xl bg-white overflow-hidden focus-within:ring-2 focus-within:ring-teal focus-within:border-teal transition-all">
+                        <input 
+                            type="number" 
+                            className="w-full px-4 py-2.5 text-sm text-navy outline-none bg-transparent" 
+                            placeholder="0.00" 
+                            value={form.total_amount} 
+                            onChange={(e) => handleChange('total_amount', e.target.value)} 
+                            disabled={status === 'loading'} 
+                        />
+                        <div className="flex shrink-0 bg-slate-50 border-l border-slate-200 p-1">
+                            {['ILS', 'USD'].map(curr => (
+                                <button
+                                    key={curr}
+                                    type="button"
+                                    onClick={() => handleChange('currency', curr)}
+                                    className={`w-10 flex items-center justify-center text-base font-extrabold rounded-lg transition-colors ${
+                                        form.currency === curr 
+                                            ? 'bg-teal/15 text-teal shadow-sm' 
+                                            : 'text-slate-400 hover:bg-slate-200/50 hover:text-slate-600'
+                                    }`}
+                                >
+                                    {curr === 'ILS' ? '₪' : '$'}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 </div>
+
                 <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-400 uppercase">Price</label>
-                    <input type="number" className={inputClass} placeholder="0.00" value={form.total_amount} onChange={(e) => handleChange('total_amount', e.target.value)} disabled={status === 'loading'} />
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Tax Amount</label>
+                    <div className="flex border border-slate-200 rounded-xl bg-white overflow-hidden focus-within:ring-2 focus-within:ring-teal focus-within:border-teal transition-all">
+                        <div className="flex shrink-0 bg-slate-50 border-r border-slate-200 p-1 w-10 items-center justify-center text-slate-400 font-extrabold text-sm">
+                            {form.currency === 'USD' ? '$' : '₪'}
+                        </div>
+                        <input 
+                            type="number" 
+                            className="w-full px-4 py-2.5 text-sm text-navy outline-none bg-transparent" 
+                            placeholder="0.00" 
+                            value={form.tax_amount} 
+                            onChange={(e) => handleChange('tax_amount', e.target.value)} 
+                            disabled={status === 'loading'} 
+                        />
+                    </div>
                 </div>
             </div>
+            
             <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-400 uppercase">Category</label>
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Category</label>
                 <div className="grid grid-cols-3 gap-2">
                     {CATEGORIES.map(c => (
                         <button key={c.id} type="button" onClick={() => handleChange('category', c.id)} disabled={status === 'loading'} className={`flex items-center justify-center gap-2 py-2 rounded-xl border text-xs font-medium transition-all ${form.category === c.id ? 'border-teal bg-teal/5 text-teal shadow-sm' : 'border-slate-100 text-slate-500 hover:bg-slate-50'} ${status === 'loading' ? 'opacity-50 cursor-not-allowed' : ''}`}>
@@ -176,7 +227,8 @@ const ManualEntryTab = ({ onClose, onUploadSuccess }) => {
                     ))}
                 </div>
             </div>
-            <button onClick={handleSave} disabled={!form.merchant_name || !form.receipt_date || !form.total_amount || status === 'loading'} className="w-full py-3 text-sm font-bold rounded-xl text-white bg-teal disabled:opacity-40 transition-all shadow-md active:scale-[0.98]">
+            
+            <button onClick={handleSave} disabled={!form.merchant_name || !form.receipt_date || !form.total_amount || status === 'loading'} className="w-full py-3 text-sm font-bold rounded-xl text-white bg-teal disabled:opacity-40 transition-all shadow-md active:scale-[0.98] mt-2">
                 {status === 'loading' ? 'Saving...' : 'Save Receipt'}
             </button>
         </div>

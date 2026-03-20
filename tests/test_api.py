@@ -8,6 +8,7 @@ VALID_RECEIPT = {
     "total_amount": "29.99",
     "tax_amount": "2.50",
     "receipt_date": "2025-11-13",
+    "currency": "ILS",
 }
 
 

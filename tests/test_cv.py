@@ -1,9 +1,18 @@
 import os
+from unittest.mock import MagicMock, patch
 
 import cv2
 import numpy as np
+import pytest
 
 from app.services.ai_processor import ReceiptScanner
+
+
+@pytest.fixture(autouse=True)
+def mock_vision_client():
+    """Prevents Google Vision API client from initialising during unit tests."""
+    with patch("app.services.ai_processor.vision.ImageAnnotatorClient", return_value=MagicMock()):
+        yield
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets", "test_receipts")
 

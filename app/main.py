@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import receipts, auth
+from app.api import receipts, auth, dashboard
 from app.core.limiter import limiter
 
 app = FastAPI(
@@ -38,6 +38,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.include_router(receipts.router)
 app.include_router(auth.router)
+app.include_router(dashboard.router)
 
 @app.get("/health")
 async def health_check():

@@ -2,7 +2,7 @@
 
 <img src="assets/logo.png" alt="ClarityScan Logo" width="360"/>
 
-### AI-Powered Receipt Management — OCR · Computer Vision · Expense Analytics
+### AI-Powered Receipt Management — OCR · Computer Vision · Multi-Currency Analytics
 
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat&logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
@@ -21,7 +21,7 @@
 
 ClarityScan is a fullstack SaaS application built with an async FastAPI backend, React 18 frontend, and a custom OCR pipeline — turning receipt images into structured, searchable financial data automatically.
 
-Upload an image of a receipt → **OpenCV** preprocesses and deskews the image → **PaddleOCR** extracts the text → the parsing pipeline identifies merchant, amount and date→ the data lands in your expense dashboard, ready for tracking, analysis, and CSV export. If the OCR makes a mistake, users review and correct it before final approval. The entire pipeline is async and non-blocking.
+Upload a receipt → **OpenCV** preprocesses and deskews the image → **Google Cloud Vision API** extracts the text → a custom heuristics engine parses the merchant, amount, tax, and currency → the data lands in a multi-currency expense dashboard. The architecture is designed for accuracy and scale: heavy aggregations and live exchange-rate conversions (ILS/USD) are handled entirely server-side, keeping the React client a pure presentation layer.
 
 ---
 
@@ -36,8 +36,7 @@ UPLOADED → PROCESSING → REVIEW_NEEDED → APPROVED
 ```
 
 **Computer Vision Preprocessing**  
-Raw receipt photos are poor OCR input. Before PaddleOCR sees a single character, OpenCV runs a multi-step preprocessing pipeline: Gaussian blur → Otsu thresholding → contour detection → perspective correction via 4-corner homography.
-This step is what makes OCR on real-world, skewed, low-light photos reliable.
+Raw receipt photos are poor OCR input. Before Google Vision sees a single character, OpenCV runs a multi-step preprocessing pipeline: Gaussian blur → Otsu thresholding → contour detection → perspective correction via 4-corner homography. This step is what makes OCR on real-world, skewed, low-light photos reliable.
 
 | Step | Technique |
 |---|---|
@@ -46,20 +45,26 @@ This step is what makes OCR on real-world, skewed, low-light photos reliable.
 | Receipt boundary detection | Contour approximation + minAreaRect fallback |
 | Deskew & crop | 4-point perspective transform |
 
-**OCR Intelligence**  
-After text extraction, the pipeline applies several parsing layers before storing any data:
-- **Confidence filtering** — results below 0.3 confidence are discarded before parsing
-- **Expanded keyword matching** — catches `Total`, `Amount Due`, `Balance Due`, `Grand Total` across formats
-- **Smart fallback** — if no keyword matches, scans backwards from the receipt bottom skipping tax/change lines
+**OCR Intelligence & Heuristics**  
+After Google Vision extracts raw text, a custom Python heuristics engine applies several parsing layers — specifically tuned for bilingual (Hebrew/English) receipts:
+
+- **Regex & negative filtering** — explicitly ignores tracking numbers, percentages (e.g. `18.00%`), and change/refund lines
+- **Alpha-numeric merchant validation** — rejects corrupted headers (e.g. `*****`) and enforces letter-based merchant names
+- **Smart fallbacks** — if no total keyword matches, scans backwards from the receipt bottom skipping tax and change lines
 - **Multi-locale price parsing** — handles both `1,234.56` (US) and `1.234,56` (European) decimal formats
-- **Multi-format date parsing** — tries 6 date formats until one succeeds
-- **Tax auto-calculation** — derived automatically as `total − subtotal`; never entered manually
+- **Tax sanity check** — mathematically derives missing tax as `total − subtotal`, but nullifies it automatically if the result exceeds the legal 18% VAT threshold, preventing DB corruption
+
+**Backend-Driven Aggregation (Thin Client Architecture)**  
+To support dynamic multi-currency reporting, the React frontend acts as a pure presentation layer. The FastAPI backend handles all heavy lifting:
+
+- Live exchange rate fetching via the Frankfurter API, cached server-side for 24 hours
+- Server-side conversion of individual receipts to prevent floating-point rounding loss
+- Centralized generation of chart data, summary cards, and insight metrics
 
 **Security & Auth**
 - JWT authentication — every endpoint scopes queries to the authenticated user; cross-user access is impossible at the DB layer
-- Passwords hashed with Argon2 via `passlib`
+- Passwords hashed with Argon2 via `passlib`; registration enforces confirmation + client-side validation
 - File uploads validated with `python-magic` (reads first 2048 bytes to verify real MIME type, not just extension) — prevents disguised file attacks
-- Files written to disk non-blocking via `aiofiles`
 - Login rate-limited to 5 requests/minute per IP via `slowapi`
 
 **Data & Infrastructure**
@@ -77,8 +82,9 @@ After text extraction, the pipeline applies several parsing layers before storin
 | Backend | Python 3.12, FastAPI (async) |
 | Database | PostgreSQL, SQLAlchemy Async ORM, Alembic |
 | Validation | Pydantic v2 |
-| Image Processing | OpenCV |
-| OCR | PaddleOCR (PP-OCRv4) |
+| Image Processing | OpenCV, NumPy |
+| AI / OCR | Google Cloud Vision API |
+| External APIs | Frankfurter API (live exchange rates) |
 | Auth | JWT, passlib (Argon2), slowapi |
 | Frontend | React 18, Vite, Tailwind CSS, Recharts |
 | Containerization | Docker, Docker Compose |
@@ -91,16 +97,17 @@ After text extraction, the pipeline applies several parsing layers before storin
 ## Features
 
 **Receipt Pipeline**
-- 📂 Drag-and-drop or file-select image upload with live status feedback
-- 🤖 Automatic extraction of merchant name, total, tax, date, and category via OCR
-- ✏️ Side-by-side review UI — original image alongside extracted fields for correction
+- 📂 Drag-and-drop or file-select image upload with live non-blocking status feedback
+- 🤖 Automatic extraction of merchant name, total, tax, date, and currency via OCR
+- ✏️ Side-by-side review UI — original image alongside extracted fields for correction before data hits the ledger
 - ✅ Approve with a single click; approved receipts are locked and tracked
 - 📝 Manual entry form for receipts without images — saved directly as `APPROVED`
 
-**Expense Dashboard**
+**Multi-Currency Expense Dashboard**
+- 💱 Real-time ILS/USD toggle — converts the entire dashboard instantly using live exchange rates
 - 📊 6-month bar chart of approved spending, derived from real receipt data
 - 🍩 Category donut chart for current month breakdown
-- 💰 Monthly budget tracker with color-coded progress bar (teal → amber → red)
+- 💰 Dynamic monthly budget tracker — calculates remaining % mathematically regardless of display currency
 - 🔍 Insight cards: top category, biggest receipt, average receipt, month-over-month delta
 - 💡 Daily rotating financial tip (30 tips, cycles by day of month)
 
@@ -109,17 +116,13 @@ After text extraction, the pipeline applies several parsing layers before storin
 - 📥 CSV export of all filtered receipts
 - 📄 Paginated table with status badges and per-receipt detail view
 
-**Auth**
-- JWT login/register with per-user data isolation enforced at the query layer
-- Password confirmation on registration, show/hide toggle, client-side validation
-
 ---
 
 ## Testing
 
 **12 pytest tests** — 6 API/auth flows, 3 FSM state transitions, 2 RBAC isolation, 1 CV pipeline — run against in-memory SQLite with the OCR pipeline mocked, no GPU or real database required.
 
-OCR accuracy validated against **13 real-world receipt images** in `tests/assets/test_receipts/` — including flat scans, crumpled photos, dark backgrounds, partial crops, and mixed-layout formats. Images sourced from public sources for testing purposes only; all rights belong to their respective owners.
+OCR accuracy validated against **13 real-world receipt images** in `tests/assets/test_receipts/` — including flat scans, crumpled photos, dark backgrounds, partial crops, and mixed Hebrew/English layouts.
 
 ---
 
@@ -140,12 +143,12 @@ OCR accuracy validated against **13 real-world receipt images** in `tests/assets
 ```
 clarity-scan/
 ├── app/
-│   ├── api/              # FastAPI route handlers (auth, receipts)
-│   ├── core/             # Config, JWT security, rate limiter
+│   ├── api/              # FastAPI route handlers (auth, receipts, dashboard)
+│   ├── core/             # Config, JWT security, rate limiter, storage
 │   ├── crud/             # Database query layer
 │   ├── db/               # SQLAlchemy models & async engine
 │   ├── schemas/          # Pydantic request/response schemas
-│   └── services/         # AI processor (OpenCV + PaddleOCR pipeline)
+│   └── services/         # Business logic (OCR pipeline, currency, dashboard)
 ├── alembic/              # Database migrations
 ├── tests/
 │   ├── assets/
@@ -157,7 +160,7 @@ clarity-scan/
 │       ├── components/   # Shared UI components
 │       ├── context/      # Auth context (JWT state)
 │       ├── hooks/        # Custom React hooks
-│       ├── pages/        # Route-level page components
+│       ├── pages/        # Route-level page components (thin client)
 │       └── data/         # Static data (financial tips)
 ├── docker-compose.yml
 └── .github/workflows/    # CI pipeline

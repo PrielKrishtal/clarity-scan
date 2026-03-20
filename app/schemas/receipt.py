@@ -3,7 +3,7 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 from decimal import Decimal
 from datetime import date, datetime
-from app.db.models import ReceiptStatus,ReceiptCategory
+from app.db.models import ReceiptStatus, ReceiptCategory, CurrencyType
 
 
 class ReceiptBase(BaseModel):
@@ -12,7 +12,7 @@ class ReceiptBase(BaseModel):
     tax_amount: Decimal | None = Field(default=None, ge=0)
     receipt_date: date | None = Field(default=None)
     category: ReceiptCategory | None = Field(default=ReceiptCategory.OTHER)
-
+    currency: CurrencyType = Field(default=CurrencyType.ILS)
 class ReceiptCreate(ReceiptBase):
     pass
 
@@ -23,6 +23,7 @@ class ReceiptUpdate(BaseModel):
     tax_amount: Decimal | None = Field(default=None, ge=0)
     receipt_date: date | None = Field(default=None)
     category: ReceiptCategory | None = Field(default=None)
+    currency: CurrencyType | None = Field(default=None)
 
 class ReceiptResponse(BaseModel):
     id: str
@@ -32,6 +33,7 @@ class ReceiptResponse(BaseModel):
     total_amount: Decimal | None = None
     tax_amount: Decimal | None = None
     receipt_date: date | None = None
+    currency: CurrencyType
     image_path: Optional[str] = None
     image_url: Optional[str] = None
     uploaded_at: datetime | None = None
